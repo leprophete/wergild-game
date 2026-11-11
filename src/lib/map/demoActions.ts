@@ -12,6 +12,7 @@ import { resolveOwner, type CellState } from "./state";
 export function deployBlocker(cells: CellState[], id: number, faction: FactionId): string | null {
   const sc = STATIC_CELLS[id];
   if (sc.kind === "blocked") return "The river cannot be held.";
+  if (sc.baseOf && sc.baseOf !== faction) return "This base camp is impregnable.";
   const c = cells[id];
   if (c.owner === faction) return null;
   if (neighbors(id).some((n) => cells[n].owner === faction)) return null;
@@ -29,7 +30,7 @@ export function applyDeploy(cells: CellState[], id: number, faction: FactionId, 
     ...c,
     forces,
     mine: c.mine + amount,
-    owner: resolveOwner(c.owner, forces),
+    owner: STATIC_CELLS[id].baseOf ?? resolveOwner(c.owner, forces),
     wetUntil: now + COOLDOWN_MINUTES * 60_000,
   };
   const out = cells.slice();
@@ -40,7 +41,12 @@ export function applyDeploy(cells: CellState[], id: number, faction: FactionId, 
 export function applyWithdraw(cells: CellState[], id: number, faction: FactionId, amount: number) {
   const c = cells[id];
   const forces = { ...c.forces, [faction]: Math.max(0, (c.forces[faction] ?? 0) - amount) };
-  const next: CellState = { ...c, forces, mine: c.mine - amount, owner: resolveOwner(c.owner, forces) };
+  const next: CellState = {
+    ...c,
+    forces,
+    mine: c.mine - amount,
+    owner: STATIC_CELLS[id].baseOf ?? resolveOwner(c.owner, forces),
+  };
   if (next.mine <= 0) next.wetUntil = null;
   const out = cells.slice();
   out[id] = next;

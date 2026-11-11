@@ -173,13 +173,13 @@ Un soldat vaut donc ×1 à l'achat et ×2 après 30 jours de détention. L'ancie
 ### 4. Déploiement
 
 - Le joueur répartit sa force entre des cases. Ce qui n'est pas déployé reste en réserve.
-- On peut déployer sur une case neutre ou ennemie seulement si elle touche (par un côté) une case tenue par sa faction. Au début de chaque saison, chaque Bannière reçoit un camp de base de 2 × 2 cases dans sa terre d'origine.
+- On peut déployer sur une case neutre ou ennemie seulement si elle touche (par un côté) une case tenue par sa faction. Au début de chaque saison, chaque Bannière reçoit un camp de base de 2 × 2 cases dans sa terre d'origine. Le camp de base est imprenable : il appartient à sa Bannière toute la saison, même sans soldats, et seuls ses membres peuvent y déployer. Une Bannière qui a tout perdu peut donc toujours repartir de son camp.
 - Un joueur peut placer au plus \[20 000\] de force sur une même case. Une baleine doit donc s'étaler, et une armée étalée est plus facile à attaquer.
 - Des soldats déployés ou déplacés sont bloqués \[1 h\] sur leur case (« encre humide ») avant de pouvoir être retirés.
 
 ### 5. Contrôle d'une case et combats
 
-Une case appartient à la faction qui y a la plus grande force totale, en additionnant tous ses membres. En cas d'égalité, la faction qui tenait déjà la case la garde. Attaquer revient simplement à déployer plus de force que le défenseur sur une case adjacente. La résolution est immédiate.
+Une case appartient à la faction qui y a la plus grande force totale, en additionnant tous ses membres. En cas d'égalité, la faction qui tenait déjà la case la garde. Exception : les cases d'un camp de base appartiennent toujours à leur Bannière (règle 4). Attaquer revient simplement à déployer plus de force que le défenseur sur une case adjacente. La résolution est immédiate.
 
 Les soldats d'une faction perdante ne meurent pas. Ils restent sur la case et peuvent la reprendre avec des renforts. Une case peut donc avoir plusieurs factions présentes, mais une seule propriétaire.
 
