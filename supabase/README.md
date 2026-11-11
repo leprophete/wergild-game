@@ -34,3 +34,18 @@ npm run seed:gen -- demo    # → supabase/seed_demo.sql
 delete from public.players where wallet like 'DEMO%';
 update public.cells set owner_faction_id = base_faction_id, contested = false;
 ```
+
+## On-chain balances (step 4)
+
+- `apply_balance()` turns a balance **read by RPC** into soldiers, seniority and force (rules 1, 2, 6, 10).
+  Test: [`tests/balance_rules.sql`](tests/balance_rules.sql) — runs in a block that rolls back.
+- Balances are refreshed by: the Helius webhook (`/api/webhooks/helius`), the 10-minute job
+  (`/api/cron/reconcile`), and `/api/me` when the last read is older than a minute.
+- Devnet test token: `npm run devnet -- create | send <wallet> <amount> | balance <wallet>`.
+
+### At deployment (step 9)
+
+1. **Helius webhook** — dashboard.helius.dev → Webhooks → New: type *Enhanced*, transaction type *Any*,
+   network matching the token, account address = the token **mint**, URL
+   `https://<your-domain>/api/webhooks/helius`, *Authentication header* = the value of `HELIUS_WEBHOOK_SECRET`.
+2. **10-minute job** — fill in and run [`cron_reconcile.sql`](cron_reconcile.sql) in the SQL editor.

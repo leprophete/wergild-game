@@ -5,6 +5,10 @@ import { getSessionWallet } from "@/lib/auth/session";
 import { currentAgeDays, forceOf, soldiersFromBalance, veteranMultiplier } from "@/lib/game/rules";
 import type { FactionId } from "@/lib/factions";
 import type { MeResponse } from "@/lib/game/types";
+import { syncWallet } from "@/lib/chain/sync";
+
+/** Re-read the chain at most this often on page loads (webhooks and the 10-min job do the rest). */
+const STALE_MS = 60_000;
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +18,16 @@ export async function GET() {
   if (!wallet) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
 
   const sb = getAdminSupabase();
-  const { data: p, error } = await sb.from("players").select("*").eq("wallet", wallet).maybeSingle();
+  const readPlayer = () => sb.from("players").select("*").eq("wallet", wallet).maybeSingle();
+  let { data: p, error } = await readPlayer();
+  if (p && (!p.balance_synced_at || Date.now() - Date.parse(p.balance_synced_at) > STALE_MS)) {
+    try {
+      await syncWallet(wallet);
+      ({ data: p, error } = await readPlayer());
+    } catch (e) {
+      console.error("me: balance sync failed (showing last known balance)", e);
+    }
+  }
   if (error) {
     console.error("me: player read failed", error);
     return NextResponse.json({ error: "server_error" }, { status: 500 });
