@@ -12,6 +12,8 @@ import { NONCE_TTL_MINUTES } from "@config/game";
 export const newNonce = () => randomBytes(24).toString("base64url");
 
 export function buildSignInMessage(opts: { domain: string; wallet: string; nonce: string; expiresAt: Date }) {
+  // wallets compare the URI with the page origin: http only for local development
+  const scheme = /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(opts.domain) ? "http" : "https";
   const issuedAt = new Date(opts.expiresAt.getTime() - NONCE_TTL_MINUTES * 60_000);
   return [
     `${opts.domain} wants you to sign in with your Solana account:`,
@@ -19,7 +21,7 @@ export function buildSignInMessage(opts: { domain: string; wallet: string; nonce
     "",
     "Swear your oath to a Banner of $WERGILD. This signature is free and sends no transaction.",
     "",
-    `URI: https://${opts.domain}`,
+    `URI: ${scheme}://${opts.domain}`,
     "Version: 1",
     `Nonce: ${opts.nonce}`,
     `Issued At: ${issuedAt.toISOString()}`,
