@@ -35,6 +35,8 @@ interface View {
 }
 
 const MAX_ZOOM_CELL_PX = 140;
+/** Screen strip kept clear at the top of the map, under the filter bar, when the whole map is shown. */
+const TOP_INSET = 52;
 
 /** A quill cursor for the map (the interface keeps the normal cursor). */
 const QUILL = `url("data:image/svg+xml,${encodeURIComponent(
@@ -66,7 +68,7 @@ export default function MapCanvas(props: Props) {
   // --- view helpers ---------------------------------------------------------
   const fitScale = () => {
     const { w, h } = sizeRef.current;
-    return Math.min(w / WORLD_W, h / WORLD_H);
+    return Math.min(w / WORLD_W, (h - TOP_INSET) / WORLD_H);
   };
   const clampView = (v: View): View => {
     const { w, h } = sizeRef.current;
@@ -77,7 +79,10 @@ export default function MapCanvas(props: Props) {
     const mh = WORLD_H * s;
     const pad = 40;
     const tx = mw <= w ? (w - mw) / 2 : Math.min(pad, Math.max(w - mw - pad, v.tx));
-    const ty = mh <= h ? (h - mh) / 2 : Math.min(pad, Math.max(h - mh - pad, v.ty));
+    const ty =
+      mh <= h - TOP_INSET
+        ? TOP_INSET + (h - TOP_INSET - mh) / 2
+        : Math.min(TOP_INSET, Math.max(h - mh - pad, v.ty));
     return { s, tx, ty };
   };
   const zoomAt = (px: number, py: number, ns: number) => {
@@ -93,7 +98,7 @@ export default function MapCanvas(props: Props) {
     const mine = propsRef.current.myFaction;
     if (w < 700 && mine) {
       const b = FACTION_BY_ID[mine].base;
-      const ns = Math.max(s, (h * 0.8) / WORLD_H);
+      const ns = Math.max(s, (h - TOP_INSET) / WORLD_H);
       viewRef.current = clampView({ s: ns, tx: w / 2 - cx(b.x + 1) * ns, ty: h / 2 - cy(b.y + 1) * ns });
     } else viewRef.current = clampView({ s, tx: 0, ty: 0 });
   };

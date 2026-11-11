@@ -87,7 +87,9 @@ export default function MapClient() {
 
   return (
     <div className="flex h-dvh flex-col bg-charcoal text-parchment">
-      <TopBar seasonNumber={world.season.number} seasonName={world.season.name} endsAt={world.season.endsAt} now={now} />
+      <TopBar seasonNumber={world.season.number} seasonName={world.season.name} endsAt={world.season.endsAt} now={now}>
+        <MiniBanners scores={world.scores} myFaction={me.faction} />
+      </TopBar>
       <div className="relative flex min-h-0 flex-1">
         <main className="relative min-w-0 flex-1">
           <MapCanvas
@@ -100,7 +102,6 @@ export default function MapClient() {
             seasonSub={`Season ${roman(world.season.number)} of $WERGILD · the war of the five Banners`}
             onSelect={select}
           />
-          <MiniBanners scores={world.scores} myFaction={me.faction} />
           <MapFilters value={filter} onChange={setFilter} />
           <div className="max-md:bottom-[76px] max-md:absolute max-md:inset-x-0">
             <ActivityFeed entries={world.feed} now={now} />

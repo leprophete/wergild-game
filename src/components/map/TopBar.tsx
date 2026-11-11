@@ -20,20 +20,24 @@ export function TopBar({
   seasonName,
   endsAt,
   now,
+  children,
 }: {
   seasonNumber: number;
   seasonName: string;
   endsAt: number;
   now: number;
+  /** The miniature banners: they hang inside the header, never over the map. */
+  children?: React.ReactNode;
 }) {
   return (
-    <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 border-b border-gold/40 bg-charcoal px-3 md:px-5">
+    <header className="relative z-30 flex shrink-0 flex-col border-b border-gold/40 bg-charcoal md:h-[104px] md:flex-row md:items-start">
       <div className="pointer-events-none absolute inset-x-0 bottom-[3px] h-px bg-gold/20" />
-      <a href="/map" className="font-display text-lg font-bold tracking-[0.12em] text-gold md:text-xl">
-        $WERGILD
-      </a>
-      <div className="hidden h-6 w-px bg-gold/30 sm:block" />
-      <div className="min-w-0 leading-tight">
+      <div className="flex h-12 min-w-0 items-center gap-3 px-3 md:h-14 md:max-w-[calc(50%-180px)] md:px-5">
+        <a href="/map" className="shrink-0 font-display text-lg font-bold tracking-[0.12em] text-gold md:text-xl">
+          $WERGILD
+        </a>
+        <div className="hidden h-6 w-px shrink-0 bg-gold/30 sm:block" />
+        <div className="min-w-0 leading-tight">
         <div className="truncate font-display text-[11px] tracking-[0.2em] text-parchment/90 md:text-xs">
           SEASON {roman(seasonNumber)} · {seasonName.toUpperCase()}
         </div>
@@ -41,12 +45,15 @@ export function TopBar({
           <span className="hidden sm:inline">The Knell in </span>
           <span className="text-parchment/90">{formatRemaining(endsAt - now)}</span>
         </div>
+        </div>
       </div>
+      {/* banner rail: its own row on mobile, centred in the header on desktop */}
+      <div className="relative h-[66px] md:absolute md:inset-x-0 md:top-0 md:h-full md:pointer-events-none">{children}</div>
     </header>
   );
 }
 
-/** The five miniature banners hanging over the map; their length follows the season score. */
+/** The five miniature banners hanging from the header rail; their length follows the season score. */
 export function MiniBanners({
   scores,
   myFaction,
@@ -60,7 +67,8 @@ export function MiniBanners({
   const ranked = [...FACTIONS].sort((a, b) => scores[b.id] - scores[a.id]);
   const rank = Object.fromEntries(ranked.map((f, i) => [f.id, i + 1])) as Record<FactionId, number>;
   return (
-    <div className="pointer-events-none absolute left-1/2 top-12 z-20 flex md:top-0 -translate-x-1/2 items-start gap-1.5 md:gap-3">
+    <div className="pointer-events-none absolute left-1/2 top-0 flex -translate-x-1/2 items-start gap-3 md:gap-4">
+      <div className="absolute -inset-x-3 top-[3px] h-[3px] rounded-full bg-gradient-to-r from-transparent via-gold/70 to-transparent" />
       {FACTIONS.map((f, i) => {
         const k = scores[f.id] / max;
         return (

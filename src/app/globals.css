@@ -42,12 +42,13 @@ body {
 }
 
 /* Miniature banner length follows the season score (--k in 0..1). */
+/* They hang from the header rail, so the rail must fit the longest one plus its score label. */
 .mini-banner {
-  height: calc(44px + var(--k, 0) * 40px);
+  height: calc(30px + var(--k, 0) * 18px); /* rail 66px */
 }
 @media (min-width: 768px) {
   .mini-banner {
-    height: calc(64px + var(--k, 0) * 64px);
+    height: calc(44px + var(--k, 0) * 40px); /* rail 104px */
   }
 }
 
