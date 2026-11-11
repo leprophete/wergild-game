@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+/* $WERGILD palette & type — see SPEC.md, "Direction artistique" */
+@theme inline {
+  --color-charcoal: #141210;
+  --color-parchment: #e6d8b8;
+  --color-burnt: #c9b48a;
+  --color-ink: #2a1f14;
+  --color-gold: #c9a24b;
+  --color-blood: #8e1b1b;
+  --color-goblins: #5c8a3a;
+  --color-changelings: #8db3c7;
+  --color-knaves: #7a2e5c;
+  --color-unburied: #3b3b3b;
+  --color-wretches: #b5552b;
+
+  --font-display: var(--nf-cinzel), serif;
+  --font-fell: var(--nf-fell), serif;
+  --font-sans: var(--nf-inter), system-ui, sans-serif;
+  --font-mono: var(--nf-mono), ui-monospace, monospace;
+}
+
+html,
+body {
+  background: #141210;
+  overscroll-behavior: none;
+}
+
+/* Banners hang from the top and sway very gently, like cloth. */
+@keyframes banner-sway {
+  0%,
+  100% {
+    transform: rotate(-0.9deg) skewX(0.4deg);
+  }
+  50% {
+    transform: rotate(0.9deg) skewX(-0.4deg);
+  }
+}
+.banner-sway {
+  transform-origin: 50% 0;
+  animation: banner-sway 6s ease-in-out infinite;
+}
+
+/* Miniature banner length follows the season score (--k in 0..1). */
+.mini-banner {
+  height: calc(44px + var(--k, 0) * 40px);
+}
+@media (min-width: 768px) {
+  .mini-banner {
+    height: calc(64px + var(--k, 0) * 64px);
+  }
+}
+
+@keyframes feed-new {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.feed-new {
+  animation: feed-new 0.9s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-sway,
+  .feed-new {
+    animation: none;
+  }
+}
