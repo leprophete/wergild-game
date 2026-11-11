@@ -6,9 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed:gen": "tsx scripts/gen-seed.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
     "next": "15.5.29",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -23,6 +25,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.5.29",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

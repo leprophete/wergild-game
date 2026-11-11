@@ -13,7 +13,7 @@ function formatRemaining(ms: number) {
 }
 
 const roman = (n: number) =>
-  ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"][n] ?? String(n);
+  n === 0 ? "0" : (["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"][n] ?? String(n));
 
 export function TopBar({
   seasonNumber,

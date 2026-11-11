@@ -74,7 +74,8 @@ export function CellPanel({
 }: {
   cells: CellState[];
   cellId: number;
-  player: PlayerState;
+  /** null = spectator: read-only, no actions */
+  player: PlayerState | null;
   reserve: number;
   events: GameEvent[];
   onDeploy: (amount: number) => void;
@@ -90,7 +91,7 @@ export function CellPanel({
   const contested = isContested(c);
   const now = Date.now();
   const wetMin = c.wetUntil && c.wetUntil > now ? Math.ceil((c.wetUntil - now) / 60_000) : 0;
-  const blocker = deployBlocker(cells, cellId, player.faction);
+  const blocker = player ? deployBlocker(cells, cellId, player.faction) : "Connect your wallet to deploy.";
   const maxDeploy = blocker ? 0 : maxDeployable(c, reserve);
   const [mode, setMode] = useState<"deploy" | "withdraw">("deploy");
   const max = mode === "deploy" ? maxDeploy : wetMin ? 0 : c.mine;
@@ -167,6 +168,11 @@ export function CellPanel({
             </ul>
           )}
 
+          {!player ? (
+            <div className="mt-4 rounded-md border border-gold/20 bg-white/[0.03] p-3 text-sm text-parchment/60">
+              Connect your wallet to deploy or withdraw soldiers here.
+            </div>
+          ) : (
           <div className="mt-4 rounded-md border border-gold/20 bg-white/[0.03] p-3">
             <div className="flex items-baseline justify-between text-sm">
               <span className="text-parchment/70">My soldiers here</span>
@@ -234,8 +240,27 @@ export function CellPanel({
               </div>
             )}
           </div>
+          )}
         </>
       )}
+    </section>
+  );
+}
+
+export function SpectatorCard() {
+  return (
+    <section>
+      <h2 className="font-display text-sm font-semibold tracking-[0.18em] text-gold">SPECTATOR</h2>
+      <p className="mt-2 text-sm text-parchment/70">
+        You are watching the war. Tap a cell to see which Banners hold it and with what force.
+      </p>
+      <button
+        disabled
+        title="Wallet connection arrives in the next update"
+        className="mt-4 w-full cursor-not-allowed rounded-md border border-gold/40 py-2 text-sm font-semibold text-gold/60"
+      >
+        Connect wallet · soon
+      </button>
     </section>
   );
 }

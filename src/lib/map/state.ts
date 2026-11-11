@@ -11,6 +11,8 @@ export interface CellState {
   mine: number;
   /** "Wet ink": epoch ms until which my soldiers are locked here. */
   wetUntil: number | null;
+  /** Server-computed flag (live data). When absent, it is derived from the forces. */
+  contested?: boolean;
 }
 
 export interface PlayerState {
@@ -70,6 +72,7 @@ export function resolveOwner(prev: FactionId | null, forces: Partial<Record<Fact
 
 /** Contested: the top two Banners are within CONTESTED_GAP_PCT of each other. */
 export function isContested(c: CellState): boolean {
+  if (c.contested !== undefined) return c.contested;
   const r = rankedForces(c);
   if (r.length < 2) return false;
   return (r[0].force - r[1].force) / r[0].force < CONTESTED_GAP_PCT / 100;
