@@ -28,6 +28,17 @@ export const verifyRequestSchema = z
   })
   .strict();
 
+const cellId = z.number().int().min(0).max(48 * 30 - 1);
+const amount = z.number().int().positive().max(1_000_000_000);
+
+/** POST /api/deploy and /api/withdraw */
+export const cellActionSchema = z.object({ cellId, amount }).strict();
+/** POST /api/move */
+export const moveSchema = z
+  .object({ fromCellId: cellId, toCellId: cellId, amount })
+  .strict()
+  .refine((m) => m.fromCellId !== m.toCellId, "same cell");
+
 export const joinRequestSchema = z.object({ factionId: z.enum(FACTION_IDS as [string, ...string[]]) }).strict();
 
 /** Parses a JSON body with a schema; returns null on any malformed input. */

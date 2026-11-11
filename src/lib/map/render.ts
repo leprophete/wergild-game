@@ -1036,3 +1036,135 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number) {
     ctx.stroke();
   }
 }
+
+// ---------------------------------------------------------------------------
+// Animations (SPEC "Animations"): drawn on top of the final state for ~1 s.
+//   deploy   — small pawns drawn with the quill (~400 ms), then the wash spreads from the centre
+//   conquest — the old colour burns away from the edges, then the new one spreads
+//   retreat  — the soldiers are struck through with a pen stroke and the wash fades
+// ---------------------------------------------------------------------------
+export type AnimKind = "deploy" | "conquest" | "retreat";
+export interface CellAnim {
+  cell: number;
+  kind: AnimKind;
+  from: FactionId | null;
+  to: FactionId | null;
+  start: number;
+}
+export const ANIM_MS: Record<AnimKind, number> = { deploy: 1200, conquest: 1600, retreat: 1000 };
+
+/** Compares two snapshots and returns the animations to play. */
+export function diffAnimations(prev: CellState[], next: CellState[], now: number): CellAnim[] {
+  const out: CellAnim[] = [];
+  for (let i = 0; i < next.length; i++) {
+    const a = prev[i];
+    const b = next[i];
+    if (!a || !b) continue;
+    const ta = totalForce(a);
+    const tb = totalForce(b);
+    if (a.owner !== b.owner && a.owner && b.owner) out.push({ cell: i, kind: "conquest", from: a.owner, to: b.owner, start: now });
+    else if (tb > ta) out.push({ cell: i, kind: "deploy", from: a.owner, to: b.owner, start: now });
+    else if (tb < ta) out.push({ cell: i, kind: "retreat", from: a.owner, to: b.owner, start: now });
+  }
+  // a season reset or a first load is not a battle: no animation storm
+  return out.length > 40 ? [] : out;
+}
+
+const ease = (t: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
+
+function pawn(ctx: Ctx, x: number, y: number, s: number) {
+  ctx.beginPath();
+  ctx.arc(x, y - s * 0.9, s * 0.32, 0, Math.PI * 2);
+  ctx.moveTo(x - s * 0.18, y - s * 0.6);
+  ctx.lineTo(x - s * 0.45, y);
+  ctx.lineTo(x + s * 0.45, y);
+  ctx.lineTo(x + s * 0.18, y - s * 0.6);
+  ctx.fillStyle = PARCH;
+  ctx.fill();
+  ctx.stroke();
+}
+
+function pawns(ctx: Ctx, cx0: number, cy0: number, reveal: number) {
+  // the quill draws from left to right
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(cx0 - CELL / 2, cy0 - CELL / 2, CELL * reveal, CELL);
+  ctx.clip();
+  ink(ctx, 1, 0.95);
+  pawn(ctx, cx0 - 8, cy0 + 9, 9);
+  pawn(ctx, cx0, cy0 + 6, 10);
+  pawn(ctx, cx0 + 8, cy0 + 9, 9);
+  ctx.restore();
+}
+
+/** Parchment over the cell, except a growing hole: the wash below seems to spread from the centre. */
+function spread(ctx: Ctx, x: number, y: number, t: number) {
+  const r = ease(t) * CELL * 0.75;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, CELL, CELL);
+  ctx.arc(x + CELL / 2, y + CELL / 2, Math.max(0.1, r), 0, Math.PI * 2, true);
+  ctx.fillStyle = rgba(PARCH, 0.92 * (1 - ease(t) * 0.3));
+  ctx.fill("evenodd");
+  ctx.restore();
+}
+
+export function drawAnimations(ctx: Ctx, anims: CellAnim[], now: number): CellAnim[] {
+  const alive: CellAnim[] = [];
+  for (const a of anims) {
+    const dt = now - a.start;
+    const dur = ANIM_MS[a.kind];
+    if (dt >= dur) continue;
+    alive.push(a);
+    const x = cx(a.cell % GRID_W);
+    const y = cy(Math.floor(a.cell / GRID_W));
+    const mx = x + CELL / 2;
+    const my = y + CELL / 2;
+
+    if (a.kind === "deploy") {
+      const draw = dt / 400;
+      if (!a.from && a.to) spread(ctx, x, y, (dt - 400) / 800);
+      ctx.globalAlpha = dt < 900 ? 1 : 1 - (dt - 900) / 300;
+      pawns(ctx, mx, my, Math.min(1, draw));
+      ctx.globalAlpha = 1;
+    } else if (a.kind === "conquest") {
+      const burn = dt / 700; // phase 1: the old colour burns from the edges inward
+      if (burn < 1 && a.from) {
+        const inset = ease(burn) * (CELL / 2);
+        ctx.fillStyle = rgba(PARCH, 0.95);
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.globalCompositeOperation = "multiply";
+        ctx.fillStyle = rgba(FACTION_BY_ID[a.from].color, 0.5);
+        ctx.fillRect(x + inset, y + inset, CELL - inset * 2, CELL - inset * 2);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = `rgba(120,40,10,${0.85 * (1 - burn)})`;
+        ctx.lineWidth = 2.2;
+        ctx.strokeRect(x + inset, y + inset, CELL - inset * 2, CELL - inset * 2);
+        ctx.strokeStyle = `rgba(230,120,40,${0.6 * (1 - burn)})`;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + inset + 1.2, y + inset + 1.2, CELL - inset * 2 - 2.4, CELL - inset * 2 - 2.4);
+      } else {
+        spread(ctx, x, y, (dt - 700) / 900); // phase 2: the new colour spreads
+      }
+    } else {
+      // retreat: soldiers struck through, the wash fades
+      const t = dt / dur;
+      if (a.from && !a.to) {
+        ctx.globalCompositeOperation = "multiply";
+        ctx.fillStyle = rgba(FACTION_BY_ID[a.from].color, 0.5 * (1 - ease(t)));
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.globalCompositeOperation = "source-over";
+      }
+      ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+      pawns(ctx, mx, my, 1);
+      const k = ease(dt / 350);
+      ink(ctx, 1.6, 0.95);
+      ctx.beginPath();
+      ctx.moveTo(x + 4, y + CELL - 8);
+      ctx.quadraticCurveTo(mx, my + 2, x + 4 + (CELL - 8) * k, y + CELL - 8 - (CELL - 16) * k);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+  return alive;
+}

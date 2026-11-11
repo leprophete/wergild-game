@@ -4,9 +4,9 @@ import { STATIC_CELLS, neighbors } from "./layout";
 import { resolveOwner, type CellState } from "./state";
 
 /**
- * Step 1 only: local, client-side simulation so the panel can be tried.
- * In step 5 these rules move to a single transactional Postgres function;
- * the browser will never decide the outcome.
+ * Demo mode only (/map?demo): a local simulation to try the panel without a wallet.
+ * The real game runs these rules in game_action() (Postgres, one transaction);
+ * the browser never decides the outcome.
  */
 
 export function deployBlocker(cells: CellState[], id: number, faction: FactionId): string | null {

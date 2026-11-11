@@ -49,3 +49,11 @@ update public.cells set owner_faction_id = base_faction_id, contested = false;
    network matching the token, account address = the token **mint**, URL
    `https://<your-domain>/api/webhooks/helius`, *Authentication header* = the value of `HELIUS_WEBHOOK_SECRET`.
 2. **10-minute job** — fill in and run [`cron_reconcile.sql`](cron_reconcile.sql) in the SQL editor.
+
+## Game actions (step 5)
+
+- `game_action()` — deploy, withdraw, move in **one transaction**, player row locked (no double spend).
+  Rules 4 and 5: adjacency, river, impregnable camps, reserve, 20 000 per player per cell, 1 h wet ink
+  (lifted during The Rush), owner recomputed with the tie going to the holder.
+- Test: [`tests/game_rules.sql`](tests/game_rules.sql) — 18 checks, rolled back.
+- API: `POST /api/deploy`, `/api/withdraw`, `/api/move`. Deploy and move re-read the on-chain balance first.

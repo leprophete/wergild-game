@@ -94,6 +94,15 @@ export default function MapClient() {
   const live = world?.mode === "live";
   const account = live && session.status === "signed-in" ? session.me : null;
 
+  // Every live map update may concern me too (a sale trimmed by the webhook, an action from
+  // another tab): re-read my army alongside. /api/me re-reads the chain at most once a minute.
+  const { refresh: refreshMe, status: sessionStatus } = session;
+  const mapVersion = live ? world?.cells : null;
+  useEffect(() => {
+    if (mapVersion && sessionStatus === "signed-in") void refreshMe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapVersion]);
+
   // Live: my soldiers come from GET /api/me, laid over the public map.
   const cells = useMemo(() => {
     if (!world || !live || !account) return world?.cells ?? [];
@@ -115,10 +124,50 @@ export default function MapClient() {
   const deployed = useMemo(() => cells.reduce((s, c) => s + c.mine, 0), [cells]);
   const reserve = me ? playerForce(me) - deployed : 0;
 
-  const select = useCallback((id: number | null) => {
-    setSelected(id);
-    if (id !== null) setDrawerOpen(true);
-  }, []);
+  // Move: after choosing an amount, the next tap on the map picks the destination.
+  const [moveFrom, setMoveFrom] = useState<{ cell: number; amount: number } | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const moveRef = useRef(moveFrom);
+  moveRef.current = moveFrom;
+
+  const post = useCallback(
+    async (path: string, body: object): Promise<string | null> => {
+      try {
+        const r = await fetch(path, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) return j.message ?? "The order was refused.";
+        await session.refresh(); // my soldiers and reserve; the map itself updates through Realtime
+        return null;
+      } catch {
+        return "The messenger was lost. Check your connection.";
+      }
+    },
+    [session],
+  );
+
+  const select = useCallback(
+    (id: number | null) => {
+      const m = moveRef.current;
+      if (m && id !== null && id !== m.cell) {
+        setMoveError(null);
+        void post("/api/move", { fromCellId: m.cell, toCellId: id, amount: m.amount }).then((err) => {
+          if (err) setMoveError(err);
+          else {
+            setMoveFrom(null);
+            setSelected(id);
+          }
+        });
+        return;
+      }
+      setSelected(id);
+      if (id !== null) setDrawerOpen(true);
+    },
+    [post],
+  );
 
   if (!world) {
     const msg =
@@ -133,19 +182,23 @@ export default function MapClient() {
   const feedPush = (text: string) =>
     setWorld((w) => w && { ...w, feed: [{ id: `l${Date.now()}`, at: Date.now(), text }, ...w.feed].slice(0, 20) });
 
-  // Demo only: local simulation. Live actions arrive in step 5 (server-side Postgres function).
-  const deploy = (amount: number) => {
-    if (selected === null || !me) return;
+  // Live: the server decides (POST /api/deploy, /api/withdraw, /api/move). Demo: local simulation.
+  const deploy = async (amount: number) => {
+    if (selected === null || !me) return null;
+    if (live) return post("/api/deploy", { cellId: selected, amount });
     const { cells, took } = applyDeploy(world.cells, selected, me.faction, amount, Date.now());
     setWorld({ ...world, cells });
     if (took) feedPush(`${FACTION_BY_ID[took].name} took ${cellLabel(selected)}`);
+    return null;
   };
-  const withdraw = (amount: number) => {
-    if (selected === null || !me) return;
+  const withdraw = async (amount: number) => {
+    if (selected === null || !me) return null;
+    if (live) return post("/api/withdraw", { cellId: selected, amount });
     const { cells, lostTo } = applyWithdraw(world.cells, selected, me.faction, amount);
     setWorld({ ...world, cells });
     if (lostTo !== undefined)
       feedPush(lostTo ? `${FACTION_BY_ID[lostTo].name} took ${cellLabel(selected)}` : `${cellLabel(selected)} fell silent`);
+    return null;
   };
 
   const cellPanel =
@@ -158,8 +211,8 @@ export default function MapClient() {
         events={world.events}
         onDeploy={deploy}
         onWithdraw={withdraw}
+        onMove={live ? (amount) => (setMoveError(null), setMoveFrom({ cell: selected, amount }), setDrawerOpen(false)) : undefined}
         onClose={() => setSelected(null)}
-        actionsLocked={live ? "Deploying and withdrawing open with the next update of the war." : undefined}
       />
     ) : null;
   const footnote =
@@ -198,6 +251,18 @@ export default function MapClient() {
             onSelect={select}
           />
           <MapFilters value={filter} onChange={setFilter} />
+          {moveFrom && (
+            <div className="absolute inset-x-3 top-14 z-20 mx-auto flex max-w-md items-center gap-3 rounded-md border border-gold bg-charcoal/95 px-3 py-2 text-sm shadow-xl">
+              <span className="flex-1 text-parchment/90">
+                March <span className="font-mono text-gold">{moveFrom.amount.toLocaleString("en-US")}</span> from{" "}
+                {cellLabel(moveFrom.cell)}: tap the destination.
+                {moveError && <span className="mt-0.5 block text-xs text-[#e7b4a8]">{moveError}</span>}
+              </span>
+              <button onClick={() => setMoveFrom(null)} className="rounded border border-gold/40 px-2 py-1 text-xs text-parchment/80">
+                Cancel
+              </button>
+            </div>
+          )}
           {world.feed.length > 0 && (
             <div className="max-md:bottom-[76px] max-md:absolute max-md:inset-x-0">
               <ActivityFeed entries={world.feed} now={now} />

@@ -76,6 +76,7 @@ export function CellPanel({
   events,
   onDeploy,
   onWithdraw,
+  onMove,
   onClose,
   actionsLocked,
 }: {
@@ -87,8 +88,11 @@ export function CellPanel({
   actionsLocked?: string;
   reserve: number;
   events: GameEvent[];
-  onDeploy: (amount: number) => void;
-  onWithdraw: (amount: number) => void;
+  /** resolve with an error message to show, or null on success */
+  onDeploy: (amount: number) => Promise<string | null> | void;
+  onWithdraw: (amount: number) => Promise<string | null> | void;
+  /** start picking a destination on the map for `amount` soldiers (live only) */
+  onMove?: (amount: number) => void;
   onClose: () => void;
 }) {
   useMinuteTick();
@@ -102,11 +106,31 @@ export function CellPanel({
   const wetMin = c.wetUntil && c.wetUntil > now ? Math.ceil((c.wetUntil - now) / 60_000) : 0;
   const blocker = player ? deployBlocker(cells, cellId, player.faction) : "Connect your wallet to deploy.";
   const maxDeploy = blocker ? 0 : maxDeployable(c, reserve);
-  const [mode, setMode] = useState<"deploy" | "withdraw">("deploy");
+  const [mode, setMode] = useState<"deploy" | "withdraw" | "move">("deploy");
   const max = mode === "deploy" ? maxDeploy : wetMin ? 0 : c.mine;
   const [amount, setAmount] = useState(0);
-  useEffect(() => setAmount(0), [cellId, mode]);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setAmount(0);
+    setError(null);
+  }, [cellId, mode]);
   const amt = Math.min(amount, max);
+  const modes = onMove ? (["deploy", "withdraw", "move"] as const) : (["deploy", "withdraw"] as const);
+
+  const act = async () => {
+    if (amt <= 0 || pending) return;
+    if (mode === "move") return onMove?.(amt);
+    setPending(true);
+    setError(null);
+    try {
+      const err = await (mode === "deploy" ? onDeploy(amt) : onWithdraw(amt));
+      if (err) setError(err);
+      else setAmount(0);
+    } finally {
+      setPending(false);
+    }
+  };
   const cellEvents = events.filter((e) => e.endsAt > now && inZone(sc.x, sc.y, e.zone));
 
   const tags: string[] = [];
@@ -197,8 +221,8 @@ export function CellPanel({
               <div className="mt-1 text-xs text-[#9fb0d8]">Ink still wet · locked for {wetMin} min</div>
             )}
 
-            <div className="mt-3 grid grid-cols-2 gap-1 rounded-md bg-black/30 p-1 text-sm">
-              {(["deploy", "withdraw"] as const).map((m) => (
+            <div className={`mt-3 grid gap-1 rounded-md bg-black/30 p-1 text-sm ${modes.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+              {modes.map((m) => (
                 <button
                   key={m}
                   onClick={() => setMode(m)}
@@ -210,8 +234,8 @@ export function CellPanel({
             </div>
 
             {mode === "deploy" && blocker && <p className="mt-3 text-xs text-[#e7b4a8]">{blocker}</p>}
-            {mode === "withdraw" && c.mine === 0 && <p className="mt-3 text-xs text-parchment/55">You have no soldiers on this cell.</p>}
-            {mode === "withdraw" && c.mine > 0 && wetMin > 0 && (
+            {mode !== "deploy" && c.mine === 0 && <p className="mt-3 text-xs text-parchment/55">You have no soldiers on this cell.</p>}
+            {mode !== "deploy" && c.mine > 0 && wetMin > 0 && (
               <p className="mt-3 text-xs text-parchment/55">Soldiers can leave once the ink has dried ({COOLDOWN_MINUTES} min cooldown).</p>
             )}
 
@@ -241,12 +265,19 @@ export function CellPanel({
                   </button>
                 </div>
                 <button
-                  disabled={amt <= 0}
-                  onClick={() => (mode === "deploy" ? onDeploy(amt) : onWithdraw(amt))}
+                  disabled={amt <= 0 || pending}
+                  onClick={act}
                   className="mt-3 w-full rounded-md bg-gold py-2 text-sm font-semibold text-charcoal transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {mode === "deploy" ? `Deploy ${fmt(amt)}` : `Withdraw ${fmt(amt)}`}
+                  {pending
+                    ? "The quill is writing…"
+                    : mode === "deploy"
+                      ? `Deploy ${fmt(amt)}`
+                      : mode === "withdraw"
+                        ? `Withdraw ${fmt(amt)}`
+                        : `Move ${fmt(amt)} · pick a cell`}
                 </button>
+                {error && <p className="mt-2 text-xs text-[#e7b4a8]">{error}</p>}
                 {mode === "deploy" && (
                   <p className="mt-2 text-[11px] text-parchment/45">
                     Max {fmt(MAX_FORCE_PER_CELL)} force per player per cell. Soldiers stay {COOLDOWN_MINUTES} min.

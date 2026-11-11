@@ -9,8 +9,11 @@ import {
   WORLD_W,
   cx,
   cy,
+  diffAnimations,
+  drawAnimations,
   drawBackground,
   drawOverlay,
+  type CellAnim,
   drawTerritory,
   worldToCell,
   type Fonts,
@@ -61,6 +64,8 @@ export default function MapCanvas(props: Props) {
   const sizeRef = useRef({ w: 0, h: 0, dpr: 1 });
   const fittedRef = useRef(false);
   const hoverRef = useRef<number | null>(null);
+  const animsRef = useRef<CellAnim[]>([]);
+  const prevCellsRef = useRef<CellState[] | null>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
   const [ready, setReady] = useState(false);
@@ -150,6 +155,12 @@ export default function MapCanvas(props: Props) {
   useEffect(() => {
     if (!ready || !terrRef.current) return;
     drawTerritory(terrRef.current, resRef.current, props.cells);
+    // play the change (deploy / conquest / retreat) on top of the new state
+    const prev = prevCellsRef.current;
+    if (prev && prev !== props.cells && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      animsRef.current = [...animsRef.current, ...diffAnimations(prev, props.cells, performance.now())];
+    }
+    prevCellsRef.current = props.cells;
   }, [ready, props.cells]);
 
   // --- size ---------------------------------------------------------------
@@ -196,6 +207,7 @@ export default function MapCanvas(props: Props) {
       ctx.globalCompositeOperation = "multiply";
       ctx.drawImage(terr, 0, 0, WORLD_W, WORLD_H);
       ctx.globalCompositeOperation = "source-over";
+      if (animsRef.current.length) animsRef.current = drawAnimations(ctx, animsRef.current, t);
       const p = propsRef.current;
       drawOverlay(
         ctx,
