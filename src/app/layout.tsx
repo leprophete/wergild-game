@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Cinzel, IM_Fell_English, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import Providers from "@/components/wallet/Providers";
 
 const cinzel = Cinzel({ subsets: ["latin"], weight: ["400", "600", "700"], variable: "--nf-cinzel" });
 const fell = IM_Fell_English({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--nf-fell" });
@@ -22,7 +23,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${cinzel.variable} ${fell.variable} ${inter.variable} ${mono.variable}`}>
-      <body className="bg-charcoal font-sans text-parchment antialiased">{children}</body>
+      <body className="bg-charcoal font-sans text-parchment antialiased">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

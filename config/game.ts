@@ -54,3 +54,13 @@ export const GRID_H = 30;
 export const TOKEN_MINT = process.env.NEXT_PUBLIC_TOKEN_MINT ?? "";
 /** Rule 10 — liquidity pool, pump.fun bonding curve, dev wallet, known exchanges. */
 export const EXCLUDED_WALLETS: string[] = [];
+
+// Token & chain
+/** pump.fun tokens use 6 decimals. */
+export const TOKEN_DECIMALS = 6;
+export const SOLANA_CLUSTER: "devnet" | "mainnet-beta" = "devnet";
+/** "Recruit" / "Buy $WERGILD" link — pump.fun or Jupiter once the token exists. */
+export const BUY_URL = "https://pump.fun";
+
+// Session (Sign-In With Solana)
+export const SESSION_DAYS = 7;

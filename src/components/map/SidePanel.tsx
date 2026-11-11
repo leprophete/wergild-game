@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { COOLDOWN_MINUTES, MAX_FORCE_PER_CELL, VETERAN_MAX_DAYS } from "@config/game";
+import Link from "next/link";
+import { BUY_URL, COOLDOWN_MINUTES, MAX_FORCE_PER_CELL, VETERAN_MAX_DAYS } from "@config/game";
+import { useWalletModal } from "@/components/wallet/WalletModal";
 import { FACTION_BY_ID } from "@/lib/factions";
 import { STATIC_CELLS, cellLabel } from "@/lib/map/layout";
 import {
@@ -40,7 +42,10 @@ export function MyArmy({ player, deployed }: { player: PlayerState; deployed: nu
         <div className="min-w-0">
           <h2 className="font-display text-sm font-semibold tracking-[0.18em] text-gold">MY ARMY</h2>
           <div className="truncate text-sm text-parchment/85">
-            {f.name} · <span className="font-mono text-parchment/60">{player.wallet}</span>
+            {f.name} ·{" "}
+            <span className="font-mono text-parchment/60">
+              {player.wallet.length > 12 ? `${player.wallet.slice(0, 4)}…${player.wallet.slice(-4)}` : player.wallet}
+            </span>
           </div>
         </div>
       </div>
@@ -50,6 +55,7 @@ export function MyArmy({ player, deployed }: { player: PlayerState; deployed: nu
         <Stat label="Seniority" value={`${player.ageDays} d`} hint={`×2 at ${VETERAN_MAX_DAYS} days`} />
         <Stat label="Veteran bonus" value={`+${Math.round((mult - 1) * 100)}%`} />
       </div>
+      {player.soldiers === 0 && <RecruitNotice />}
     </section>
   );
 }
@@ -71,11 +77,14 @@ export function CellPanel({
   onDeploy,
   onWithdraw,
   onClose,
+  actionsLocked,
 }: {
   cells: CellState[];
   cellId: number;
   /** null = spectator: read-only, no actions */
   player: PlayerState | null;
+  /** when set, actions are not available yet and this explains why */
+  actionsLocked?: string;
   reserve: number;
   events: GameEvent[];
   onDeploy: (amount: number) => void;
@@ -168,9 +177,15 @@ export function CellPanel({
             </ul>
           )}
 
-          {!player ? (
+          {!player || actionsLocked ? (
             <div className="mt-4 rounded-md border border-gold/20 bg-white/[0.03] p-3 text-sm text-parchment/60">
-              Connect your wallet to deploy or withdraw soldiers here.
+              {player && (
+                <div className="mb-2 flex items-baseline justify-between text-parchment/80">
+                  <span>My soldiers here</span>
+                  <span className="font-mono text-parchment">{fmt(c.mine)}</span>
+                </div>
+              )}
+              {actionsLocked ?? "Connect your wallet to deploy or withdraw soldiers here."}
             </div>
           ) : (
           <div className="mt-4 rounded-md border border-gold/20 bg-white/[0.03] p-3">
@@ -248,6 +263,7 @@ export function CellPanel({
 }
 
 export function SpectatorCard() {
+  const { open } = useWalletModal();
   return (
     <section>
       <h2 className="font-display text-sm font-semibold tracking-[0.18em] text-gold">SPECTATOR</h2>
@@ -255,13 +271,46 @@ export function SpectatorCard() {
         You are watching the war. Tap a cell to see which Banners hold it and with what force.
       </p>
       <button
-        disabled
-        title="Wallet connection arrives in the next update"
-        className="mt-4 w-full cursor-not-allowed rounded-md border border-gold/40 py-2 text-sm font-semibold text-gold/60"
+        onClick={open}
+        className="mt-4 w-full rounded-md bg-gold py-2 text-sm font-semibold text-charcoal transition hover:brightness-110"
       >
-        Connect wallet · soon
+        Connect wallet to play
       </button>
     </section>
+  );
+}
+
+/** Signed in, but no oath sworn yet. */
+export function ChooseBannerCard({ soldiers }: { soldiers: number }) {
+  return (
+    <section>
+      <h2 className="font-display text-sm font-semibold tracking-[0.18em] text-gold">NO BANNER YET</h2>
+      <p className="mt-2 text-sm text-parchment/70">Swear your oath to one of the five Banners to march on the map.</p>
+      <Link
+        href="/join"
+        className="mt-4 block w-full rounded-md bg-gold py-2 text-center text-sm font-semibold text-charcoal transition hover:brightness-110"
+      >
+        Choose a Banner
+      </Link>
+      {soldiers === 0 && <RecruitNotice />}
+    </section>
+  );
+}
+
+/** Onboarding step 3: no $WERGILD yet. */
+export function RecruitNotice() {
+  return (
+    <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-blood/60 bg-blood/15 px-3 py-2">
+      <span className="text-sm text-parchment/85">You have 0 soldiers.</span>
+      <a
+        href={BUY_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="rounded bg-gold px-2.5 py-1 text-xs font-semibold text-charcoal hover:brightness-110"
+      >
+        Recruit
+      </a>
+    </div>
   );
 }
 

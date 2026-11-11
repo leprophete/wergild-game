@@ -12,7 +12,8 @@ import type { MapFilter } from "@/lib/map/render";
 import { supabaseConfigured } from "@/lib/supabase/client";
 import MapCanvas from "./MapCanvas";
 import { MiniBanners, TopBar } from "./TopBar";
-import { CellPanel, HomelandCard, MyArmy, SpectatorCard } from "./SidePanel";
+import { CellPanel, ChooseBannerCard, HomelandCard, MyArmy, SpectatorCard } from "./SidePanel";
+import { useSession } from "@/components/wallet/SessionProvider";
 import { ActivityFeed } from "./ActivityFeed";
 import { MapFilters } from "./MapFilters";
 
@@ -85,13 +86,33 @@ function useWorld() {
 
 export default function MapClient() {
   const { world, setWorld, status } = useWorld();
+  const session = useSession();
   const [selected, setSelected] = useState<number | null>(null);
   const [filter, setFilter] = useState<MapFilter>("all");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const now = useNow();
+  const live = world?.mode === "live";
+  const account = live && session.status === "signed-in" ? session.me : null;
 
-  const deployed = useMemo(() => (world ? world.cells.reduce((s, c) => s + c.mine, 0) : 0), [world]);
-  const me = world?.player ?? null;
+  // Live: my soldiers come from GET /api/me, laid over the public map.
+  const cells = useMemo(() => {
+    if (!world || !live || !account) return world?.cells ?? [];
+    const mine = new Map(account.deployments.map((d) => [d.cell, d]));
+    if (mine.size === 0) return world.cells;
+    return world.cells.map((c) => {
+      const d = mine.get(c.id);
+      return d ? { ...c, mine: d.force, wetUntil: d.lockedUntil > Date.now() ? d.lockedUntil : null } : c;
+    });
+  }, [world, live, account]);
+
+  const me: PlayerState | null = !world
+    ? null
+    : live
+      ? account?.faction
+        ? { wallet: account.wallet, faction: account.faction, soldiers: account.soldiers, ageDays: account.ageDays }
+        : null
+      : world.player;
+  const deployed = useMemo(() => cells.reduce((s, c) => s + c.mine, 0), [cells]);
   const reserve = me ? playerForce(me) - deployed : 0;
 
   const select = useCallback((id: number | null) => {
@@ -130,7 +151,7 @@ export default function MapClient() {
   const cellPanel =
     selected !== null ? (
       <CellPanel
-        cells={world.cells}
+        cells={cells}
         cellId={selected}
         player={me}
         reserve={reserve}
@@ -138,6 +159,7 @@ export default function MapClient() {
         onDeploy={deploy}
         onWithdraw={withdraw}
         onClose={() => setSelected(null)}
+        actionsLocked={live ? "Deploying and withdrawing open with the next update of the war." : undefined}
       />
     ) : null;
   const footnote =
@@ -146,7 +168,13 @@ export default function MapClient() {
       : `Live · Season ${roman(world.season.number)} · updates in real time${status === "offline" ? " (reconnecting…)" : ""}.`;
   const panel = (
     <>
-      {me ? <MyArmy player={me} deployed={deployed} /> : <SpectatorCard />}
+      {me ? (
+        <MyArmy player={me} deployed={deployed} />
+      ) : account ? (
+        <ChooseBannerCard soldiers={account.soldiers} />
+      ) : (
+        <SpectatorCard />
+      )}
       {cellPanel ?? (me ? <HomelandCard factionId={me.faction} /> : null)}
       <p className="mt-6 text-[11px] text-parchment/35">{footnote}</p>
     </>
@@ -160,7 +188,7 @@ export default function MapClient() {
       <div className="relative flex min-h-0 flex-1">
         <main className="relative min-w-0 flex-1">
           <MapCanvas
-            cells={world.cells}
+            cells={cells}
             myFaction={me?.faction ?? null}
             selectedId={selected}
             filter={filter}
@@ -200,7 +228,7 @@ export default function MapClient() {
                 </span>
               </>
             ) : (
-              <span className="font-display text-xs tracking-[0.18em] text-gold">SPECTATOR</span>
+              <span className="font-display text-xs tracking-[0.18em] text-gold">{account ? "CHOOSE A BANNER" : "SPECTATOR"}</span>
             )}
             <span className={`text-parchment/60 transition ${drawerOpen ? "rotate-180" : ""}`}>⌃</span>
           </button>
