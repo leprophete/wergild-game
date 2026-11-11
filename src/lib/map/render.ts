@@ -1,4 +1,5 @@
 import rough from "roughjs";
+import type { Drawable } from "roughjs/bin/core";
 import { COOLDOWN_MINUTES, GRID_H, GRID_W, MAX_FORCE_PER_CELL } from "@config/game";
 import { FACTIONS, FACTION_BY_ID, type FactionId } from "@/lib/factions";
 import { hash2, mulberry32 } from "@/lib/rng";
@@ -774,127 +775,187 @@ function drawScaleBar(ctx: Ctx, fonts: Fonts) {
 }
 
 // ---------------------------------------------------------------------------
-// Territory layer: wash (multiply, 50 %) + engraved hatching by garrison strength
+// Territory layer: wash (50 % ink on paper) + engraved hatching by garrison strength.
 // Composited onto the background with "multiply" (white = no change).
+//
+// Performance: rough.js shapes are generated ONCE per (cell, strength step) and cached;
+// after the first full paint, only the cells whose look changed (and their neighbours,
+// for the shared borders) are repainted.
 // ---------------------------------------------------------------------------
+const STRENGTH_STEPS = 16;
+
 export function strengthOf(total: number) {
   if (total <= 0) return 0;
   return Math.min(1, Math.sqrt(total / (MAX_FORCE_PER_CELL * 0.75)));
 }
+const stepOf = (c: CellState) => (c.owner ? Math.round(strengthOf(totalForce(c)) * STRENGTH_STEPS) : 0);
 
-export function drawTerritory(canvas: HTMLCanvasElement, R: number, cells: CellState[]) {
-  const ctx = canvas.getContext("2d")!;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+const roughGen = rough.generator();
+const hatchCache = new Map<number, Drawable | null>();
+function hatchFor(id: number, step: number): Drawable | null {
+  const key = id * 32 + step;
+  let d = hatchCache.get(key);
+  if (d !== undefined) return d;
+  const s = step / STRENGTH_STEPS;
+  d =
+    s < 0.1
+      ? null
+      : roughGen.rectangle(cx(id % GRID_W) + 2, cy(Math.floor(id / GRID_W)) + 2, CELL - 4, CELL - 4, {
+          seed: id + 1,
+          stroke: "none",
+          fill: rgba(INK, 0.22 + s * 0.32),
+          fillStyle: s > 0.55 ? "cross-hatch" : "hachure",
+          hachureGap: 13 - s * 9.5,
+          hachureAngle: -41,
+          fillWeight: 0.45 + s * 0.4,
+          roughness: 1.1,
+        });
+  hatchCache.set(key, d);
+  return d;
+}
+
+/** Each Banner colour mixed 50 % with white: the wash, as one flat fill. */
+const washOf = (f: FactionId) => {
+  const n = parseInt(FACTION_BY_ID[f].color.slice(1), 16);
+  const mix = (v: number) => Math.round((v + 255) / 2);
+  return `rgb(${mix(n >> 16)},${mix((n >> 8) & 255)},${mix(n & 255)})`;
+};
+const WASH = Object.fromEntries(FACTIONS.map((f) => [f.id, washOf(f.id)])) as Record<FactionId, string>;
+
+function paintCell(ctx: Ctx, rc: Rough, cells: CellState[], id: number) {
+  const c = cells[id];
+  const gx = id % GRID_W;
+  const gy = Math.floor(id / GRID_W);
+  const x = cx(gx);
+  const y = cy(gy);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, CELL, CELL);
+  ctx.clip();
   ctx.globalCompositeOperation = "source-over";
-  ctx.globalAlpha = 1;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.setTransform(R, 0, 0, R, 0, 0);
-
-  // 1. opaque washes
-  for (const c of cells) {
-    if (!c.owner) continue;
-    ctx.fillStyle = FACTION_BY_ID[c.owner].color;
-    ctx.fillRect(cx(c.id % GRID_W) - 0.25, cy(Math.floor(c.id / GRID_W)) - 0.25, CELL + 0.5, CELL + 0.5);
-  }
-  // 2. dilute to 50 % (ink on paper), white elsewhere
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
-  ctx.globalCompositeOperation = "destination-over";
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
-
-  // 3. hatching — spaced when weak, tight cross-hatching when strong
+  ctx.fillStyle = c.owner ? WASH[c.owner] : "#fff";
+  ctx.fillRect(x, y, CELL, CELL);
   ctx.globalCompositeOperation = "multiply";
-  const rc = rough.canvas(canvas);
-  for (const c of cells) {
-    if (!c.owner) continue;
-    const s = strengthOf(totalForce(c));
-    if (s < 0.1) continue;
-    const x = cx(c.id % GRID_W);
-    const y = cy(Math.floor(c.id / GRID_W));
-    const gap = 13 - s * 9.5;
-    rc.rectangle(x + 2, y + 2, CELL - 4, CELL - 4, {
-      seed: c.id + 1,
-      stroke: "none",
-      fill: rgba(INK, 0.22 + s * 0.32),
-      fillStyle: s > 0.55 ? "cross-hatch" : "hachure",
-      hachureGap: gap,
-      hachureAngle: -41,
-      fillWeight: 0.45 + s * 0.4,
-      roughness: 1.1,
-    });
-  }
-
-  // 4. borders between Banners, inked
+  const h = c.owner ? hatchFor(id, stepOf(c)) : null;
+  if (h) rc.draw(h);
+  // borders between Banners: each side draws its half of the shared edge
+  const edge = (n: CellState | undefined, x1: number, y1: number, x2: number, y2: number) => {
+    const o = n?.owner ?? null;
+    if (!n || o === c.owner || (!o && !c.owner)) return;
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+  };
   ctx.beginPath();
   ctx.strokeStyle = rgba(INK, 0.7);
   ctx.lineWidth = 1.3;
-  ctx.lineCap = "round";
-  for (const c of cells) {
-    const x = c.id % GRID_W;
-    const y = Math.floor(c.id / GRID_W);
-    if (x < GRID_W - 1) {
-      const o = cells[c.id + 1].owner;
-      if (o !== c.owner && (o || c.owner)) {
-        ctx.moveTo(cx(x + 1), cy(y));
-        ctx.lineTo(cx(x + 1), cy(y + 1));
-      }
-    }
-    if (y < GRID_H - 1) {
-      const o = cells[c.id + GRID_W].owner;
-      if (o !== c.owner && (o || c.owner)) {
-        ctx.moveTo(cx(x), cy(y + 1));
-        ctx.lineTo(cx(x + 1), cy(y + 1));
-      }
-    }
-  }
+  if (gx > 0) edge(cells[id - 1], x, y, x, y + CELL);
+  if (gx < GRID_W - 1) edge(cells[id + 1], x + CELL, y, x + CELL, y + CELL);
+  if (gy > 0) edge(cells[id - GRID_W], x, y, x + CELL, y);
+  if (gy < GRID_H - 1) edge(cells[id + GRID_W], x, y + CELL, x + CELL, y + CELL);
   ctx.stroke();
+  ctx.restore();
+}
+
+/** Paints the territory layer — every cell, or only `only`. */
+export function drawTerritory(canvas: HTMLCanvasElement, R: number, cells: CellState[], only?: Iterable<number>) {
+  const ctx = canvas.getContext("2d")!;
+  const rc = rough.canvas(canvas);
+  ctx.setTransform(R, 0, 0, R, 0, 0);
+  if (!only) {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+    for (let id = 0; id < cells.length; id++) paintCell(ctx, rc, cells, id);
+  } else {
+    for (const id of only) paintCell(ctx, rc, cells, id);
+  }
   ctx.globalCompositeOperation = "source-over";
 }
 
+/** Cells whose territory look changed, plus their side neighbours (shared borders). */
+export function territoryDirty(prev: CellState[], next: CellState[]): Set<number> {
+  const dirty = new Set<number>();
+  for (let i = 0; i < next.length; i++) {
+    const a = prev[i];
+    const b = next[i];
+    if (a && a.owner === b.owner && stepOf(a) === stepOf(b)) continue;
+    dirty.add(i);
+    const x = i % GRID_W;
+    if (x > 0) dirty.add(i - 1);
+    if (x < GRID_W - 1) dirty.add(i + 1);
+    if (i >= GRID_W) dirty.add(i - GRID_W);
+    if (i + GRID_W < next.length) dirty.add(i + GRID_W);
+  }
+  return dirty;
+}
+
 // ---------------------------------------------------------------------------
-// Per-frame overlay: filters, my cells, contested pulse, events, wet ink, crests
+// Overlay: filters, my cells, contested pulse, events, wet ink, crests, selection.
+// The per-cell lists are computed once per data change (buildOverlayIndex), never per frame.
 // ---------------------------------------------------------------------------
 export type MapFilter = "all" | "mine" | "contested" | "events";
 
+export interface OverlayIndex {
+  contested: number[];
+  mine: number[];
+  /** cells dimmed by the active filter (null = no filter) */
+  fog: number[] | null;
+  events: GameEvent[];
+}
+
+export function buildOverlayIndex(cells: CellState[], events: GameEvent[], filter: MapFilter, now: number): OverlayIndex {
+  const active = events.filter((e) => e.zone && e.endsAt > now);
+  const contested: number[] = [];
+  const mine: number[] = [];
+  for (const c of cells) {
+    if (isContested(c)) contested.push(c.id);
+    if (c.mine > 0) mine.push(c.id);
+  }
+  let fog: number[] | null = null;
+  if (filter !== "all") {
+    const keep =
+      filter === "mine"
+        ? new Set(mine)
+        : filter === "contested"
+          ? new Set(contested)
+          : new Set(cells.filter((c) => active.some((e) => inZone(c.id % GRID_W, Math.floor(c.id / GRID_W), e.zone))).map((c) => c.id));
+    fog = cells.filter((c) => !keep.has(c.id)).map((c) => c.id);
+  }
+  return { contested, mine, fog, events: active };
+}
+
 export interface OverlayInput {
   cells: CellState[];
-  myFaction: FactionId | null;
+  index: OverlayIndex;
   selectedId: number | null;
   hoverId: number | null;
-  filter: MapFilter;
-  events: GameEvent[];
   now: number;
   fonts: Fonts;
   crests: Partial<Record<FactionId, HTMLImageElement>>;
-  /** screen px per world unit — used to keep strokes legible and skip tiny text */
+  /** screen px per world unit — keeps strokes legible and skips tiny text */
   scale: number;
 }
 
 const compact = (n: number) => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
-export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number) {
-  const { cells, now, fonts } = o;
-  const px = 1 / o.scale; // one screen pixel in world units
-  const activeEvents = o.events.filter((e) => e.zone && e.endsAt > now);
+/** Contested cells pulse gently: 0.45 → 1 alpha, period ~1.5 s. */
+export const pulseAt = (t: number) => 0.45 + 0.55 * (0.5 + 0.5 * Math.sin((t / 1000) * Math.PI * 1.3));
 
-  // filter fog
-  if (o.filter !== "all") {
+/**
+ * Draws the overlay. With `only`, per-cell marks are limited to those cells
+ * (the caller has clipped the canvas to them).
+ */
+export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<number>) {
+  const { cells, index, now, fonts } = o;
+  const px = 1 / o.scale; // one screen pixel in world units
+  const pick = (ids: number[]) => (only ? ids.filter((i) => only.has(i)) : ids);
+  const pulse = pulseAt(t);
+
+  if (index.fog) {
     ctx.fillStyle = "rgba(20,18,16,0.5)";
-    for (const c of cells) {
-      const x = c.id % GRID_W;
-      const y = Math.floor(c.id / GRID_W);
-      const keep =
-        o.filter === "mine"
-          ? c.mine > 0
-          : o.filter === "contested"
-            ? isContested(c)
-            : activeEvents.some((e) => inZone(x, y, e.zone));
-      if (!keep) ctx.fillRect(cx(x), cy(y), CELL, CELL);
-    }
+    for (const id of pick(index.fog)) ctx.fillRect(cx(id % GRID_W), cy(Math.floor(id / GRID_W)), CELL, CELL);
   }
 
-  // crests on base camps
   for (const f of FACTIONS) {
     const img = o.crests[f.id];
     if (!img || !img.complete || !img.naturalWidth) continue;
@@ -903,26 +964,28 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number) {
     ctx.drawImage(img, cx(f.base.x) + CELL - w / 2, cy(f.base.y) + CELL - h / 2, w, h);
   }
 
-  // contested: blood-red dotted border, gently pulsing
-  const pulse = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin((t / 1000) * Math.PI * 1.3));
-  ctx.save();
-  ctx.setLineDash([2.2, 2.6]);
-  ctx.lineWidth = Math.max(1.6, 1.4 * px);
-  ctx.strokeStyle = rgba(BLOOD, pulse);
-  ctx.beginPath();
-  for (const c of cells) if (isContested(c)) ctx.rect(cx(c.id % GRID_W) + 2.5, cy(Math.floor(c.id / GRID_W)) + 2.5, CELL - 5, CELL - 5);
-  ctx.stroke();
-  ctx.restore();
+  const contested = pick(index.contested);
+  if (contested.length) {
+    ctx.save();
+    ctx.setLineDash([2.2, 2.6]);
+    ctx.lineWidth = Math.max(1.6, 1.4 * px);
+    ctx.strokeStyle = rgba(BLOOD, pulse);
+    ctx.beginPath();
+    for (const id of contested) ctx.rect(cx(id % GRID_W) + 2.5, cy(Math.floor(id / GRID_W)) + 2.5, CELL - 5, CELL - 5);
+    ctx.stroke();
+    ctx.restore();
+  }
 
-  // my cells: gold outline
-  ctx.beginPath();
-  ctx.strokeStyle = GOLD;
-  ctx.lineWidth = Math.max(1.8, 1.5 * px);
-  for (const c of cells) if (c.mine > 0) ctx.rect(cx(c.id % GRID_W) + 1, cy(Math.floor(c.id / GRID_W)) + 1, CELL - 2, CELL - 2);
-  ctx.stroke();
+  const mine = pick(index.mine);
+  if (mine.length) {
+    ctx.beginPath();
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = Math.max(1.8, 1.5 * px);
+    for (const id of mine) ctx.rect(cx(id % GRID_W) + 1, cy(Math.floor(id / GRID_W)) + 1, CELL - 2, CELL - 2);
+    ctx.stroke();
+  }
 
-  // events
-  for (const e of activeEvents) {
+  for (const e of index.events) {
     const z = e.zone!;
     const live = e.startsAt <= now;
     const color = e.type === "tithe" ? GOLD : BLOOD;
@@ -931,7 +994,7 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number) {
     const w = z.w * CELL;
     const h = z.h * CELL;
     if (e.type === "tithe" && live) {
-      ctx.fillStyle = rgba(GOLD, 0.1 + 0.06 * pulse);
+      ctx.fillStyle = rgba(GOLD, 0.13);
       ctx.fillRect(x, y, w, h);
     }
     ctx.save();
@@ -965,15 +1028,15 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number) {
 
   // wet ink: my numbers, glossy while fresh, drying over the cooldown
   const cellPx = CELL * o.scale;
-  if (cellPx >= 18) {
+  if (cellPx >= 18 && mine.length) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    for (const c of cells) {
-      if (c.mine <= 0) continue;
+    for (const id of mine) {
+      const c = cells[id];
       const wet = c.wetUntil && c.wetUntil > now ? (c.wetUntil - now) / (COOLDOWN_MINUTES * 60_000) : 0;
       if (wet <= 0 && cellPx < 34) continue;
-      const x = cx(c.id % GRID_W) + CELL / 2;
-      const y = cy(Math.floor(c.id / GRID_W)) + CELL / 2;
+      const x = cx(id % GRID_W) + CELL / 2;
+      const y = cy(Math.floor(id / GRID_W)) + CELL / 2;
       const txt = compact(c.mine);
       ctx.font = `${wet > 0 ? 700 : 400} 12px ${fonts.fell}`;
       ctx.lineWidth = 3;
@@ -1003,13 +1066,12 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number) {
     }
   }
 
-  // hover & selection
-  if (o.hoverId !== null && o.hoverId !== o.selectedId) {
+  if (o.hoverId !== null && o.hoverId !== o.selectedId && (!only || only.has(o.hoverId))) {
     ctx.strokeStyle = rgba(INK, 0.6);
     ctx.lineWidth = Math.max(1, px);
     ctx.strokeRect(cx(o.hoverId % GRID_W) + 0.5, cy(Math.floor(o.hoverId / GRID_W)) + 0.5, CELL - 1, CELL - 1);
   }
-  if (o.selectedId !== null) {
+  if (o.selectedId !== null && (!only || only.has(o.selectedId))) {
     const x = cx(o.selectedId % GRID_W);
     const y = cy(Math.floor(o.selectedId / GRID_W));
     ctx.strokeStyle = INK;
@@ -1018,7 +1080,6 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number) {
     ctx.strokeStyle = GOLD;
     ctx.lineWidth = Math.max(1, px);
     ctx.strokeRect(x + 1.5, y + 1.5, CELL - 3, CELL - 3);
-    // corner ticks
     ctx.beginPath();
     ctx.strokeStyle = INK;
     ctx.lineWidth = Math.max(1.5, 1.2 * px);

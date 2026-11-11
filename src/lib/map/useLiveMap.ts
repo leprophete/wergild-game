@@ -19,18 +19,29 @@ export function useLiveMap(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
     let alive = true;
+    let inflight: AbortController | null = null;
+    let lastBody = "";
     const load = async () => {
+      inflight?.abort();
+      const ctl = new AbortController();
+      inflight = ctl;
       try {
-        const res = await fetch("/api/map", { cache: "no-store" });
+        const res = await fetch("/api/map", { cache: "no-store", signal: ctl.signal });
         if (res.status === 404) return alive && setStatus("no-season");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const p = (await res.json()) as MapPayload;
+        const body = await res.text();
         if (!alive) return;
-        setPayload(p);
         setStatus("live");
+        // nothing moved since the last read: no new state, no re-render, no redraw
+        if (body.replace(/"generatedAt":\d+/, "") === lastBody) return;
+        lastBody = body.replace(/"generatedAt":\d+/, "");
+        setPayload(JSON.parse(body) as MapPayload);
       } catch (e) {
-        console.error("map load failed", e);
-        if (alive) setStatus("offline");
+        if (!alive || ctl.signal.aborted) return;
+        // a blip (network, server reloading): keep the last map, say so, retry on the next tick.
+        // Not console.error — it is expected and recoverable, not a bug.
+        console.warn("map: reload failed, will retry", e instanceof Error ? e.message : e);
+        setStatus("offline");
       }
     };
     const reload = () => {
@@ -48,12 +59,13 @@ export function useLiveMap(enabled: boolean) {
       .on("postgres_changes", { event: "*", schema: "public", table: "score_ticks" }, reload)
       .subscribe();
     // safety net if a socket message is missed (tab asleep, network blip)
-    const poll = setInterval(load, 60_000);
+    const poll = setInterval(() => !document.hidden && load(), 60_000);
     const onVisible = () => document.visibilityState === "visible" && reload();
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       alive = false;
+      inflight?.abort();
       clearInterval(poll);
       if (timer.current) clearTimeout(timer.current);
       document.removeEventListener("visibilitychange", onVisible);

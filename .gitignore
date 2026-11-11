@@ -45,3 +45,4 @@ next-env.d.ts
 
 # devnet test keys (never commit)
 /.devnet/
+/.next-build/

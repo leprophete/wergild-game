@@ -3,6 +3,13 @@
 import Link from "next/link";
 import { FACTIONS, type FactionId } from "@/lib/factions";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
+import { useNow } from "@/lib/useNow";
+
+/** Only this span re-renders every second. */
+function Countdown({ endsAt }: { endsAt: number }) {
+  const now = useNow(1000);
+  return <span className="text-parchment/90">{formatRemaining(endsAt - now)}</span>;
+}
 
 function formatRemaining(ms: number) {
   if (ms <= 0) return "The Knell tolls";
@@ -21,13 +28,11 @@ export function TopBar({
   seasonNumber,
   seasonName,
   endsAt,
-  now,
   children,
 }: {
   seasonNumber: number;
   seasonName: string;
   endsAt: number;
-  now: number;
   /** The miniature banners: they hang inside the header, never over the map. */
   children?: React.ReactNode;
 }) {
@@ -45,7 +50,7 @@ export function TopBar({
         </div>
         <div className="font-mono text-[11px] text-parchment/60 md:text-xs" suppressHydrationWarning>
           <span className="hidden sm:inline">The Knell in </span>
-          <span className="text-parchment/90">{formatRemaining(endsAt - now)}</span>
+          <Countdown endsAt={endsAt} />
         </div>
         </div>
       </div>

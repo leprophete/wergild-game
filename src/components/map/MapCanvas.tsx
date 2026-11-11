@@ -1,23 +1,28 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { GRID_W } from "@config/game";
 import { FACTIONS, FACTION_BY_ID, type FactionId } from "@/lib/factions";
 import type { CellState, GameEvent } from "@/lib/map/state";
 import {
+  CELL,
   CHARCOAL,
   WORLD_H,
   WORLD_W,
+  buildOverlayIndex,
   cx,
   cy,
   diffAnimations,
   drawAnimations,
   drawBackground,
   drawOverlay,
-  type CellAnim,
   drawTerritory,
+  territoryDirty,
   worldToCell,
+  type CellAnim,
   type Fonts,
   type MapFilter,
+  type OverlayIndex,
 } from "@/lib/map/render";
 
 interface Props {
@@ -40,6 +45,12 @@ interface View {
 const MAX_ZOOM_CELL_PX = 140;
 /** Screen strip kept clear at the top of the map, under the filter bar, when the whole map is shown. */
 const TOP_INSET = 52;
+/** Contested cells pulse at this rate — only those cells are redrawn. */
+const PULSE_MS = 70;
+/** Wet ink dries and event countdowns tick: a full redraw this often, no more. */
+const SLOW_TICK_MS = 30_000;
+/** Margin around a cell repainted with it (selection ticks, dotted borders). */
+const PAD = 7;
 
 /** A quill cursor for the map (the interface keeps the normal cursor). */
 const QUILL = `url("data:image/svg+xml,${encodeURIComponent(
@@ -52,6 +63,26 @@ function readFonts(): Fonts {
   return { cinzel: v("--nf-cinzel", "serif"), fell: v("--nf-fell", "serif"), mono: v("--nf-mono", "monospace") };
 }
 
+const reducedMotion = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Dev-only counters, read by the performance check (`window.__wgRender`). */
+interface RenderStats {
+  full: number;
+  region: number;
+  lastFullMs: number;
+  lastTerritoryMs: number;
+  territoryCells: number;
+}
+
+/**
+ * The war map. Rendering is ON DEMAND:
+ *  - the parchment (rough.js terrain, river, decor) is drawn once into a cached canvas;
+ *  - the territory layer is a second cached canvas, repainted only for cells that changed;
+ *  - the screen canvas is recomposed only when something changes (data, pan, zoom, hover,
+ *    selection, filter) — never in a permanent loop;
+ *  - animations (deploy/conquest/retreat, contested pulse) redraw only their own cells,
+ *    stop when they end, and pause while the tab is hidden.
+ */
 export default function MapCanvas(props: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -66,9 +97,119 @@ export default function MapCanvas(props: Props) {
   const hoverRef = useRef<number | null>(null);
   const animsRef = useRef<CellAnim[]>([]);
   const prevCellsRef = useRef<CellState[] | null>(null);
+  const indexRef = useRef<OverlayIndex>({ contested: [], mine: [], fog: null, events: [] });
   const propsRef = useRef(props);
   propsRef.current = props;
   const [ready, setReady] = useState(false);
+
+  // --- render scheduler -----------------------------------------------------
+  const sched = useRef({ raf: 0, full: false, region: new Set<number>() });
+  const statsRef = useRef<RenderStats>({ full: 0, region: 0, lastFullMs: 0, lastTerritoryMs: 0, territoryCells: 0 });
+
+  const overlayInput = (now: number) => {
+    const p = propsRef.current;
+    return {
+      cells: p.cells,
+      index: indexRef.current,
+      selectedId: p.selectedId,
+      hoverId: hoverRef.current,
+      now,
+      fonts: fontsRef.current!,
+      crests: crestsRef.current,
+      scale: viewRef.current.s,
+    };
+  };
+
+  const renderFull = (ctx: CanvasRenderingContext2D, t: number) => {
+    const bg = bgRef.current!;
+    const terr = terrRef.current!;
+    const { dpr } = sizeRef.current;
+    const v = viewRef.current;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = CHARCOAL;
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(bg, 0, 0, WORLD_W, WORLD_H);
+    ctx.globalCompositeOperation = "multiply";
+    ctx.drawImage(terr, 0, 0, WORLD_W, WORLD_H);
+    ctx.globalCompositeOperation = "source-over";
+    animsRef.current = drawAnimations(ctx, animsRef.current, t);
+    drawOverlay(ctx, overlayInput(Date.now()), t);
+  };
+
+  /** Repaints only the given cells (plus a small margin): used by the pulse and the animations. */
+  const renderRegion = (ctx: CanvasRenderingContext2D, ids: Set<number>, t: number) => {
+    const bg = bgRef.current!;
+    const terr = terrRef.current!;
+    const R = resRef.current;
+    const { dpr } = sizeRef.current;
+    const v = viewRef.current;
+    ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
+    ctx.save();
+    ctx.beginPath();
+    const touched = new Set<number>();
+    for (const id of ids) {
+      const x = cx(id % GRID_W) - PAD;
+      const y = cy(Math.floor(id / GRID_W)) - PAD;
+      ctx.rect(x, y, CELL + PAD * 2, CELL + PAD * 2);
+      touched.add(id);
+      // neighbours share the padded margin: redraw their marks too
+      for (const n of [id - 1, id + 1, id - GRID_W, id + GRID_W]) if (n >= 0 && n < 1440) touched.add(n);
+    }
+    ctx.clip();
+    for (const id of ids) {
+      const x = cx(id % GRID_W) - PAD;
+      const y = cy(Math.floor(id / GRID_W)) - PAD;
+      const w = CELL + PAD * 2;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.drawImage(bg, x * R, y * R, w * R, w * R, x, y, w, w);
+      ctx.globalCompositeOperation = "multiply";
+      ctx.drawImage(terr, x * R, y * R, w * R, w * R, x, y, w, w);
+    }
+    ctx.globalCompositeOperation = "source-over";
+    animsRef.current = drawAnimations(ctx, animsRef.current, t);
+    drawOverlay(ctx, overlayInput(Date.now()), t, touched);
+    ctx.restore();
+  };
+
+  const frame = (t: number) => {
+    const s = sched.current;
+    s.raf = 0;
+    const canvas = canvasRef.current;
+    if (!canvas || !bgRef.current || !terrRef.current || !fontsRef.current) return;
+    if (document.hidden) {
+      s.full = true; // repaint everything when the tab comes back
+      return;
+    }
+    const ctx = canvas.getContext("2d")!;
+    const before = animsRef.current.map((a) => a.cell);
+    const t0 = performance.now();
+    if (s.full) {
+      renderFull(ctx, t);
+      statsRef.current.full++;
+      statsRef.current.lastFullMs = performance.now() - t0;
+    } else if (s.region.size) {
+      renderRegion(ctx, s.region, t);
+      statsRef.current.region++;
+    }
+    s.full = false;
+    s.region = new Set();
+    // keep animating only the cells still in motion; repaint the ones that just ended once
+    const alive = new Set(animsRef.current.map((a) => a.cell));
+    const next = new Set<number>(alive);
+    for (const c of before) if (!alive.has(c)) next.add(c);
+    if (next.size) invalidate(next);
+  };
+
+  /** Ask for a repaint: everything (default) or only some cells. Coalesced into one frame. */
+  const invalidate = (cells?: Iterable<number>) => {
+    const s = sched.current;
+    if (cells) for (const c of cells) s.region.add(c);
+    else s.full = true;
+    if (!s.raf && typeof document !== "undefined" && !document.hidden) s.raf = requestAnimationFrame(frame);
+  };
 
   // --- view helpers ---------------------------------------------------------
   const fitScale = () => {
@@ -85,30 +226,34 @@ export default function MapCanvas(props: Props) {
     const pad = 40;
     const tx = mw <= w ? (w - mw) / 2 : Math.min(pad, Math.max(w - mw - pad, v.tx));
     const ty =
-      mh <= h - TOP_INSET
-        ? TOP_INSET + (h - TOP_INSET - mh) / 2
-        : Math.min(TOP_INSET, Math.max(h - mh - pad, v.ty));
+      mh <= h - TOP_INSET ? TOP_INSET + (h - TOP_INSET - mh) / 2 : Math.min(TOP_INSET, Math.max(h - mh - pad, v.ty));
     return { s, tx, ty };
+  };
+  const setView = (v: View) => {
+    viewRef.current = clampView(v);
+    invalidate();
   };
   const zoomAt = (px: number, py: number, ns: number) => {
     const v = viewRef.current;
     const wx = (px - v.tx) / v.s;
     const wy = (py - v.ty) / v.s;
-    viewRef.current = clampView({ s: ns, tx: px - wx * ns, ty: py - wy * ns });
+    setView({ s: ns, tx: px - wx * ns, ty: py - wy * ns });
   };
   const fit = () => {
     const { w, h } = sizeRef.current;
     // On narrow screens open at a readable zoom centred on the player's homeland.
     const s = fitScale();
     const mine = propsRef.current.myFaction;
-    if (w < 700 && mine) {
-      const b = FACTION_BY_ID[mine].base;
+    if (w < 700) {
       const ns = Math.max(s, (h - TOP_INSET) / WORLD_H);
-      viewRef.current = clampView({ s: ns, tx: w / 2 - cx(b.x + 1) * ns, ty: h / 2 - cy(b.y + 1) * ns });
-    } else viewRef.current = clampView({ s, tx: 0, ty: 0 });
+      const b = mine ? FACTION_BY_ID[mine].base : null;
+      const fx = b ? cx(b.x + 1) : WORLD_W / 2;
+      const fy = b ? cy(b.y + 1) : WORLD_H / 2;
+      setView({ s: ns, tx: w / 2 - fx * ns, ty: h / 2 - fy * ns });
+    } else setView({ s, tx: 0, ty: 0 });
   };
 
-  // --- one-time setup: fonts, crests, static layers -------------------------
+  // --- one-time setup: fonts, crests, the cached parchment --------------------
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -151,17 +296,80 @@ export default function MapCanvas(props: Props) {
     };
   }, []);
 
-  // --- territory layer: redrawn when cells change ---------------------------
+  // --- data changes: repaint only the cells that changed ---------------------
   useEffect(() => {
     if (!ready || !terrRef.current) return;
-    drawTerritory(terrRef.current, resRef.current, props.cells);
-    // play the change (deploy / conquest / retreat) on top of the new state
     const prev = prevCellsRef.current;
-    if (prev && prev !== props.cells && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      animsRef.current = [...animsRef.current, ...diffAnimations(prev, props.cells, performance.now())];
+    const t0 = performance.now();
+    if (!prev) {
+      drawTerritory(terrRef.current, resRef.current, props.cells);
+      statsRef.current.territoryCells = props.cells.length;
+    } else if (prev !== props.cells) {
+      const dirty = territoryDirty(prev, props.cells);
+      if (dirty.size) drawTerritory(terrRef.current, resRef.current, props.cells, dirty);
+      statsRef.current.territoryCells = dirty.size;
+      if (!reducedMotion()) {
+        animsRef.current = [...animsRef.current, ...diffAnimations(prev, props.cells, performance.now())];
+      }
     }
+    statsRef.current.lastTerritoryMs = performance.now() - t0;
     prevCellsRef.current = props.cells;
+    invalidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, props.cells]);
+
+  // overlay lists (contested, mine, filter fog): once per data or filter change, never per frame
+  useEffect(() => {
+    indexRef.current = buildOverlayIndex(props.cells, props.events, props.filter, Date.now());
+    invalidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.cells, props.events, props.filter]);
+
+  useEffect(() => {
+    invalidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.selectedId]);
+
+  // --- slow clocks: contested pulse (only those cells), wet ink & countdowns ----
+  useEffect(() => {
+    if (!ready) return;
+    const sc = sched.current;
+    let pulseTimer: ReturnType<typeof setTimeout> | null = null;
+    const pulse = () => {
+      pulseTimer = null;
+      if (document.hidden || reducedMotion()) return;
+      const ids = indexRef.current.contested;
+      if (ids.length) invalidate(ids);
+      pulseTimer = setTimeout(pulse, PULSE_MS);
+    };
+    const slow = setInterval(() => {
+      if (!document.hidden && (indexRef.current.mine.length || indexRef.current.events.length)) invalidate();
+    }, SLOW_TICK_MS);
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (pulseTimer) clearTimeout(pulseTimer);
+        pulseTimer = null;
+        cancelAnimationFrame(sc.raf);
+        sc.raf = 0;
+      } else {
+        invalidate();
+        if (!pulseTimer) pulse();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    pulse();
+    if (process.env.NODE_ENV !== "production") {
+      (window as unknown as { __wgRender: RenderStats }).__wgRender = statsRef.current;
+    }
+    return () => {
+      if (pulseTimer) clearTimeout(pulseTimer);
+      clearInterval(slow);
+      document.removeEventListener("visibilitychange", onVisibility);
+      cancelAnimationFrame(sc.raf);
+      sc.raf = 0;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   // --- size ---------------------------------------------------------------
   useEffect(() => {
@@ -176,58 +384,11 @@ export default function MapCanvas(props: Props) {
       if (!fittedRef.current && r.width > 0) {
         fit();
         fittedRef.current = true;
-      } else viewRef.current = clampView(viewRef.current);
+      } else setView(viewRef.current);
     });
     ro.observe(wrap);
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // --- render loop --------------------------------------------------------
-  useEffect(() => {
-    let raf = 0;
-    const frame = (t: number) => {
-      raf = requestAnimationFrame(frame);
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d")!;
-      const { dpr } = sizeRef.current;
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = CHARCOAL;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      const bg = bgRef.current;
-      const terr = terrRef.current;
-      const fonts = fontsRef.current;
-      if (!bg || !terr || !fonts) return;
-      const v = viewRef.current;
-      ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(bg, 0, 0, WORLD_W, WORLD_H);
-      ctx.globalCompositeOperation = "multiply";
-      ctx.drawImage(terr, 0, 0, WORLD_W, WORLD_H);
-      ctx.globalCompositeOperation = "source-over";
-      if (animsRef.current.length) animsRef.current = drawAnimations(ctx, animsRef.current, t);
-      const p = propsRef.current;
-      drawOverlay(
-        ctx,
-        {
-          cells: p.cells,
-          myFaction: p.myFaction,
-          selectedId: p.selectedId,
-          hoverId: hoverRef.current,
-          filter: p.filter,
-          events: p.events,
-          now: Date.now(),
-          fonts,
-          crests: crestsRef.current,
-          scale: v.s,
-        },
-        t,
-      );
-    };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
   }, []);
 
   // --- input: pan, pinch, wheel, tap ----------------------------------------
@@ -256,22 +417,29 @@ export default function MapCanvas(props: Props) {
       pointers.set(e.pointerId, p);
       if (pointers.size === 1) tap = { ...p, time: performance.now(), moved: false };
       if (pointers.size === 2) {
-        const ps = pinchState();
-        pinch = { ...ps, s: viewRef.current.s };
+        pinch = { ...pinchState(), s: viewRef.current.s };
         if (tap) tap.moved = true;
       }
     };
     const move = (e: PointerEvent) => {
       const p = local(e);
       if (!pointers.has(e.pointerId)) {
-        if (e.pointerType === "mouse") hoverRef.current = pickCell(p.x, p.y);
+        if (e.pointerType === "mouse") {
+          const h = pickCell(p.x, p.y);
+          if (h !== hoverRef.current) {
+            const old = hoverRef.current;
+            hoverRef.current = h;
+            // hover only touches two cells
+            invalidate([old, h].filter((c): c is number => c !== null));
+          }
+        }
         return;
       }
       const prev = pointers.get(e.pointerId)!;
       pointers.set(e.pointerId, p);
       if (pointers.size === 1) {
         const v = viewRef.current;
-        viewRef.current = clampView({ s: v.s, tx: v.tx + p.x - prev.x, ty: v.ty + p.y - prev.y });
+        setView({ s: v.s, tx: v.tx + p.x - prev.x, ty: v.ty + p.y - prev.y });
         if (tap && Math.hypot(p.x - tap.x, p.y - tap.y) > 6) tap.moved = true;
       } else if (pointers.size === 2 && pinch) {
         const ps = pinchState();
@@ -291,7 +459,13 @@ export default function MapCanvas(props: Props) {
       if (pointers.size < 2) pinch = null;
       if (pointers.size === 0) tap = null;
     };
-    const leave = () => (hoverRef.current = null);
+    const leave = () => {
+      if (hoverRef.current !== null) {
+        const old = hoverRef.current;
+        hoverRef.current = null;
+        invalidate([old]);
+      }
+    };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
       const p = local(e);

@@ -17,15 +17,6 @@ import { useSession } from "@/components/wallet/SessionProvider";
 import { ActivityFeed } from "./ActivityFeed";
 import { MapFilters } from "./MapFilters";
 
-function useNow(ms = 1000) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(id);
-  }, [ms]);
-  return now;
-}
-
 const roman = (n: number) => (n === 0 ? "0" : (["", "I", "II", "III", "IV", "V"][n] ?? String(n)));
 
 interface World {
@@ -90,7 +81,6 @@ export default function MapClient() {
   const [selected, setSelected] = useState<number | null>(null);
   const [filter, setFilter] = useState<MapFilter>("all");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const now = useNow();
   const live = world?.mode === "live";
   const account = live && session.status === "signed-in" ? session.me : null;
 
@@ -235,7 +225,7 @@ export default function MapClient() {
 
   return (
     <div className="flex h-dvh flex-col bg-charcoal text-parchment">
-      <TopBar seasonNumber={world.season.number} seasonName={world.season.name} endsAt={world.season.endsAt} now={now}>
+      <TopBar seasonNumber={world.season.number} seasonName={world.season.name} endsAt={world.season.endsAt}>
         <MiniBanners scores={world.scores} myFaction={me?.faction ?? null} />
       </TopBar>
       <div className="relative flex min-h-0 flex-1">
@@ -265,7 +255,7 @@ export default function MapClient() {
           )}
           {world.feed.length > 0 && (
             <div className="max-md:bottom-[76px] max-md:absolute max-md:inset-x-0">
-              <ActivityFeed entries={world.feed} now={now} />
+              <ActivityFeed entries={world.feed} />
             </div>
           )}
         </main>

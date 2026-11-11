@@ -1,6 +1,7 @@
 "use client";
 
 import type { FeedEntry } from "@/lib/map/state";
+import { useNow } from "@/lib/useNow";
 
 const ago = (ms: number) => {
   const m = Math.floor(ms / 60_000);
@@ -10,7 +11,8 @@ const ago = (ms: number) => {
 };
 
 /** Discreet activity feed, written with the quill, bottom-left of the map. */
-export function ActivityFeed({ entries, now }: { entries: FeedEntry[]; now: number }) {
+export function ActivityFeed({ entries }: { entries: FeedEntry[] }) {
+  const now = useNow(30_000);
   return (
     <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[min(80vw,320px)]">
       <ul className="space-y-0.5 rounded-sm bg-parchment/80 px-3 py-2 shadow-[0_2px_10px_rgba(0,0,0,0.5)] backdrop-blur-[1px]">
