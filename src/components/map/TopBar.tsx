@@ -62,7 +62,7 @@ export function TopBar({
 }
 
 /** A small gold crown, above the leading Banner. */
-function Crown() {
+export function Crown() {
   return (
     <svg viewBox="0 0 24 14" className="h-3 w-6 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)] md:h-[14px] md:w-7" aria-label="First">
       <path

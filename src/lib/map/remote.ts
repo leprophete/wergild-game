@@ -12,12 +12,14 @@ export interface MapPayload {
   strengths: [number, number, number][];
   events: GameEvent[];
   scores: Record<FactionId, number>;
+  /** points of the last scored hour, per Banner */
+  lastHour: Record<FactionId, number>;
   generatedAt: number;
 }
 
 const PAGE = 1000; // PostgREST max rows per request
 
-async function fetchAll<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>) {
+export async function fetchAll<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>) {
   const out: T[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await page(from, from + PAGE - 1);
@@ -53,8 +55,8 @@ export async function loadMapPayload(sb: SupabaseClient): Promise<MapPayload | n
       .gt("ends_at", new Date().toISOString())
       .lte("announced_at", new Date().toISOString())
       .order("starts_at"),
-    fetchAll<{ faction_id: string; points: number }>((a, b) =>
-      sb.from("score_ticks").select("faction_id, points").eq("season_id", season.id).order("hour").range(a, b),
+    fetchAll<{ faction_id: string; points: number; hour: string }>((a, b) =>
+      sb.from("score_ticks").select("faction_id, points, hour").eq("season_id", season.id).order("hour").range(a, b),
     ),
   ]);
   if (events.error) throw events.error;
@@ -67,7 +69,12 @@ export async function loadMapPayload(sb: SupabaseClient): Promise<MapPayload | n
     outCells[local] = [fIndex(c.owner_faction_id), c.contested ? 1 : 0];
   }
   const scores = Object.fromEntries(FACTION_IDS.map((f) => [f, 0])) as Record<FactionId, number>;
-  for (const t of ticks) scores[t.faction_id as FactionId] += t.points;
+  const lastHour = Object.fromEntries(FACTION_IDS.map((f) => [f, 0])) as Record<FactionId, number>;
+  const latest = ticks.reduce((m, t) => (t.hour > m ? t.hour : m), "");
+  for (const t of ticks) {
+    scores[t.faction_id as FactionId] += t.points;
+    if (t.hour === latest) lastHour[t.faction_id as FactionId] = t.points;
+  }
 
   return {
     season: {
@@ -90,6 +97,7 @@ export async function loadMapPayload(sb: SupabaseClient): Promise<MapPayload | n
       endsAt: Date.parse(e.ends_at),
     })),
     scores,
+    lastHour,
     generatedAt: Date.now(),
   };
 }

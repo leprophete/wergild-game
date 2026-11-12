@@ -78,6 +78,7 @@ export interface FakeWorld {
   feed: FeedEntry[];
   season: { number: number; name: string; startsAt: number; endsAt: number };
   scores: Record<FactionId, number>;
+  lastHour: Record<FactionId, number>;
 }
 
 export function generateFakeWorld(now: number): FakeWorld {
@@ -169,5 +170,13 @@ export function generateFakeWorld(now: number): FakeWorld {
     { id: "f5", at: now - 48 * 60_000, text: `The Plague is coming to ${cellLabel(cellId(8, 12))}` },
   ];
 
-  return { cells, player, events, feed, season: { number: 1, name: "The Unsworn Lands", startsAt, endsAt }, scores };
+  return {
+    cells,
+    player,
+    events,
+    feed,
+    season: { number: 1, name: "The Unsworn Lands", startsAt, endsAt },
+    scores,
+    lastHour: owned,
+  };
 }

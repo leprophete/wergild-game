@@ -68,3 +68,12 @@ base camps on the illustrated landmarks. To change it:
 2. `npm run seed:gen -- remap` → `supabase/apply_world_mask.sql`;
 3. run that file in the SQL editor: soldiers that end up on water (or on another Banner's camp)
    go back to reserve, cells and camps are rewritten, every owner is recomputed.
+
+## Score (step 6)
+
+- `score_tick(now())` — rule 7, run by pg_cron job `wergild-score-tick` at every full UTC hour
+  (`select * from cron.job_run_details order by start_time desc limit 5;` to check it).
+  Scores the hour that just ended on each player's **lowest** force of that hour, recomputes the owners,
+  1 pt per cell, 3 per watchtower, ×3 in the Tithe, shares Renown pro rata. Idempotent.
+- Test: [`tests/score_rules.sql`](tests/score_rules.sql) — rolled back.
+- API: `GET /api/ranking`; page `/ranking`; Banner points also in `/api/map` (top banners, side panel).

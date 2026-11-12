@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FACTION_BY_ID, type FactionId } from "@/lib/factions";
 import { cellLabel } from "@/lib/map/layout";
 import { generateFakeWorld } from "@/lib/map/fakeState";
@@ -12,7 +13,7 @@ import { filterMatches, type MapFilter } from "@/lib/map/render";
 import { supabaseConfigured } from "@/lib/supabase/client";
 import MapCanvas from "./MapCanvas";
 import { MiniBanners, TopBar } from "./TopBar";
-import { CellPanel, ChooseBannerCard, HomelandCard, MyArmy, SpectatorCard } from "./SidePanel";
+import { CellPanel, ChooseBannerCard, HomelandCard, MyArmy, SpectatorCard, TheWar } from "./SidePanel";
 import { useSession } from "@/components/wallet/SessionProvider";
 import { ActivityFeed } from "./ActivityFeed";
 import { MapFilters } from "./MapFilters";
@@ -27,6 +28,7 @@ interface World {
   feed: FeedEntry[];
   season: { number: number; name: string; startsAt: number; endsAt: number };
   scores: Record<FactionId, number>;
+  lastHour: Record<FactionId, number>;
   /** null = spectator (wallet connection arrives in step 3) */
   player: PlayerState | null;
 }
@@ -69,6 +71,7 @@ function useWorld() {
       feed: [...fresh.slice(0, 6), ...(w?.mode === "live" ? w.feed : [])].slice(0, 20),
       season: payload.season,
       scores: payload.scores,
+      lastHour: payload.lastHour,
       player: null,
     }));
   }, [demo, payload]);
@@ -77,6 +80,7 @@ function useWorld() {
 }
 
 export default function MapClient() {
+  const router = useRouter();
   const { world, setWorld, status } = useWorld();
   const session = useSession();
   const [selected, setSelected] = useState<number | null>(null);
@@ -225,6 +229,7 @@ export default function MapClient() {
         <SpectatorCard />
       )}
       {cellPanel ?? (me ? <HomelandCard factionId={me.faction} /> : null)}
+      <TheWar scores={world.scores} lastHour={world.lastHour} myFaction={me?.faction ?? null} />
       <p className="mt-6 text-[11px] text-parchment/35">{footnote}</p>
     </>
   );
@@ -232,7 +237,7 @@ export default function MapClient() {
   return (
     <div className="flex h-dvh flex-col bg-charcoal text-parchment">
       <TopBar seasonNumber={world.season.number} seasonName={world.season.name} endsAt={world.season.endsAt}>
-        <MiniBanners scores={world.scores} myFaction={me?.faction ?? null} />
+        <MiniBanners scores={world.scores} myFaction={me?.faction ?? null} onPick={() => router.push("/ranking")} />
       </TopBar>
       <div className="relative flex min-h-0 flex-1">
         <main className="relative min-w-0 flex-1">

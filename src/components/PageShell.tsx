@@ -17,6 +17,9 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
           <Link href="/join" className="hover:text-parchment">
             The Banners
           </Link>
+          <Link href="/ranking" className="hover:text-parchment">
+            The Ranking
+          </Link>
           <Link href="/me" className="hover:text-parchment">
             My Shield
           </Link>

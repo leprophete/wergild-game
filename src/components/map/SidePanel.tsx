@@ -364,3 +364,46 @@ export function HomelandCard({ factionId }: { factionId: PlayerState["faction"] 
     </section>
   );
 }
+
+/** The war at a glance: the five Banners ranked by season points, with last hour's gain. */
+export function TheWar({
+  scores,
+  lastHour,
+  myFaction,
+}: {
+  scores: Record<string, number>;
+  lastHour: Record<string, number>;
+  myFaction: string | null;
+}) {
+  const ranked = Object.values(FACTION_BY_ID)
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => (scores[b.f.id] ?? 0) - (scores[a.f.id] ?? 0) || a.i - b.i)
+    .map((e) => e.f);
+  return (
+    <section>
+      <Divider />
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-display text-sm font-semibold tracking-[0.18em] text-gold">THE WAR</h2>
+        <Link href="/ranking" className="text-xs text-gold/80 hover:text-gold hover:underline">
+          Full ranking →
+        </Link>
+      </div>
+      <ol className="mt-2 space-y-1">
+        {ranked.map((f, i) => (
+          <li
+            key={f.id}
+            className={`flex items-center gap-2 rounded px-1.5 py-1 text-sm ${f.id === myFaction ? "bg-gold/10 ring-1 ring-gold/40" : ""}`}
+          >
+            <span className="w-4 text-right font-mono text-xs text-parchment/45">{i + 1}</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={f.crest} alt="" className="h-5 w-auto" />
+            <span className="flex-1 truncate text-parchment/85">{f.name}</span>
+            <span className="font-mono text-parchment">{fmt(scores[f.id] ?? 0)}</span>
+            <span className="w-14 text-right font-mono text-[11px] text-parchment/45">+{fmt(lastHour[f.id] ?? 0)}/h</span>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-1.5 text-[11px] text-parchment/40">Points every full hour (UTC): 1 per cell held, 3 per watchtower.</p>
+    </section>
+  );
+}
