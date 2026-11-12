@@ -704,6 +704,9 @@ export interface OverlayInput {
   scale: number;
   /** visible part of the world: marks outside it are skipped */
   view: { x0: number; y0: number; x1: number; y1: number };
+  /** cells glowing gently (guided first deployment), and the glow phase 0..1 */
+  highlight?: number[];
+  pulse?: number;
 }
 
 const inView = (id: number, v: OverlayInput["view"]) => {
@@ -737,6 +740,20 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
     ctx.lineWidth = Math.max(1.3, 1.2 * px);
     for (const id of mine) ctx.rect(cx(id % GRID_W) + 1.2, cy(Math.floor(id / GRID_W)) + 1.2, CELL - 2.4, CELL - 2.4);
     ctx.stroke();
+  }
+
+  // the guided first deployment: the cells you may deploy on glow gently in gold
+  if (o.highlight?.length) {
+    const k = o.pulse ?? 0.6;
+    ctx.fillStyle = rgba(GOLD, 0.1 + 0.22 * k);
+    ctx.strokeStyle = rgba(GOLD, 0.45 + 0.5 * k);
+    ctx.lineWidth = 1.6 * px;
+    for (const id of pick(o.highlight)) {
+      const x = cx(id % GRID_W);
+      const y = cy(Math.floor(id / GRID_W));
+      ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+      ctx.strokeRect(x + 1.5, y + 1.5, CELL - 3, CELL - 3);
+    }
   }
 
   // medium zoom and closer: crossed swords on the cells really disputed, clear of the pennants

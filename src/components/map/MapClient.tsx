@@ -12,7 +12,11 @@ import { useLiveMap } from "@/lib/map/useLiveMap";
 import { playerForce, type CellState, type FeedEntry, type GameEvent, type PlayerState } from "@/lib/map/state";
 import { filterMatches, type MapFilter } from "@/lib/map/render";
 import { supabaseConfigured } from "@/lib/supabase/client";
-import MapCanvas from "./MapCanvas";
+import MapCanvas, { type MapApi } from "./MapCanvas";
+import { MapTools } from "./MapTools";
+import { CaptureDialog } from "./CaptureDialog";
+import { GuideCard, canDeployOn, deployTargets, useFirstDeployGuide } from "./Guide";
+import { play } from "@/lib/sound";
 import { MiniBanners, TopBar } from "./TopBar";
 import { CellPanel, ChooseBannerCard, HomelandCard, MyArmy, SpectatorCard, TheWar } from "./SidePanel";
 import { useSession } from "@/components/wallet/SessionProvider";
@@ -64,6 +68,7 @@ function useWorld() {
         });
       }
     }
+    if (fresh.some((e) => e.text.includes(" took "))) play("drum");
     prevOwners.current = cells.map((c) => c.owner);
     setWorld((w) => ({
       mode: "live",
@@ -125,6 +130,46 @@ export default function MapClient() {
   );
   const reserve = me ? playerForce(me) - deployed : 0;
 
+  // the guided first deployment: once, for a sworn player with soldiers who never deployed
+  // (development only: /map?demo&guide previews the guide on the demo map)
+  const [previewGuide] = useState(
+    () => process.env.NODE_ENV !== "production" && typeof window !== "undefined" && new URLSearchParams(location.search).has("guide"),
+  );
+  const demoGuide = previewGuide && world?.mode === "demo";
+  const guideEligible = !!((live && account?.faction) || demoGuide) && !!me && reserve > 0;
+  const hasDeployed = demoGuide ? false : !!account && account.deployments.length > 0;
+  const targets = useMemo(
+    () => (guideEligible && !hasDeployed && me ? deployTargets(cells, me.faction) : []),
+    [guideEligible, hasDeployed, cells, me?.faction], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const guide = useFirstDeployGuide(
+    guideEligible,
+    hasDeployed,
+    selected !== null && !!me && targets.length > 0 && canDeployOn(cells, me.faction, selected),
+  );
+
+  // the capture for X
+  const [mapApi, setMapApi] = useState<MapApi | null>(null);
+  const [capturing, setCapturing] = useState(false);
+
+  // the hunting horn when an event begins while the map is open
+  const events = world?.events;
+  useEffect(() => {
+    if (!events?.length) return;
+    const opened = Date.now();
+    const sounded = new Set<string>();
+    const timer = setInterval(() => {
+      const now = Date.now();
+      for (const e of events) {
+        if (e.startsAt > opened && e.startsAt <= now && !sounded.has(e.id)) {
+          sounded.add(e.id);
+          play("horn");
+        }
+      }
+    }, 15_000);
+    return () => clearInterval(timer);
+  }, [events]);
+
   // Move: after choosing an amount, the next tap on the map picks the destination.
   const [moveFrom, setMoveFrom] = useState<{ cell: number; amount: number } | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -158,6 +203,7 @@ export default function MapClient() {
         void post("/api/move", { fromCellId: m.cell, toCellId: id, amount: m.amount }).then((err) => {
           if (err) setMoveError(err);
           else {
+            play("quill");
             setMoveFrom(null);
             setSelected(id);
           }
@@ -186,7 +232,12 @@ export default function MapClient() {
   // Live: the server decides (POST /api/deploy, /api/withdraw, /api/move). Demo: local simulation.
   const deploy = async (amount: number) => {
     if (selected === null || !me) return null;
-    if (live) return post("/api/deploy", { cellId: selected, amount });
+    if (live) {
+      const err = await post("/api/deploy", { cellId: selected, amount });
+      if (!err) play("quill");
+      return err;
+    }
+    play("quill");
     const { cells, took } = applyDeploy(world.cells, selected, me.faction, amount, Date.now());
     setWorld({ ...world, cells });
     if (took) feedPush(`${FACTION_BY_ID[took].name} took ${cellLabel(selected)}`);
@@ -252,6 +303,8 @@ export default function MapClient() {
             seasonTitle={world.season.name}
             seasonSub={`Season ${roman(world.season.number)} of $WERGILD · the war of the five Banners`}
             onSelect={select}
+            onApi={setMapApi}
+            highlight={guide.step === "pick" || guide.step === "deploy" ? targets : undefined}
           />
           <MapFrame />
           <MapFilters
@@ -259,6 +312,8 @@ export default function MapClient() {
             onToggle={(f) => setFilter((cur) => (cur === f ? "all" : f))}
             matches={filterCount}
           />
+          <MapTools onCapture={() => setCapturing(true)} />
+          {guide.step && !moveFrom && <GuideCard step={guide.step} cell={selected} onSkip={guide.finish} />}
           {moveFrom && (
             <div className="absolute inset-x-3 top-14 z-20 mx-auto flex max-w-md items-center gap-3 rounded-md border border-gold bg-charcoal/95 px-3 py-2 text-sm shadow-xl">
               <span className="flex-1 text-parchment/90">
@@ -306,11 +361,13 @@ export default function MapClient() {
             <span className={`text-parchment/60 transition ${drawerOpen ? "rotate-180" : ""}`}>⌃</span>
           </button>
           <div className="max-h-[62dvh] overflow-y-auto px-4 pb-6 [&>section:first-child]:mt-0 [&>section:first-child]:border-t-0 [&>section:first-child]:pt-0">
+            {guide.step && drawerOpen && <GuideCard inline step={guide.step} cell={selected} onSkip={guide.finish} />}
             {cellPanel ?? panel}
           </div>
         </div>
       </div>
       {knell && <KnellOverlay season={knell} onClose={closeKnell} />}
+      {capturing && <CaptureDialog api={mapApi} season={world.season} scores={world.scores} onClose={() => setCapturing(false)} />}
     </div>
   );
 }

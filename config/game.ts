@@ -57,6 +57,8 @@ export const GRID_H = 30;
 
 // Chain
 export const TOKEN_MINT = process.env.NEXT_PUBLIC_TOKEN_MINT ?? "";
+/** Rule 10 — the developer's wallet, published on /rules (set at launch). */
+export const DEV_WALLET = process.env.NEXT_PUBLIC_DEV_WALLET ?? "";
 /** Rule 10 — liquidity pool, pump.fun bonding curve, dev wallet, known exchanges. */
 export const EXCLUDED_WALLETS: string[] = [];
 

@@ -6,6 +6,7 @@ import { FACTION_BY_ID } from "@/lib/factions";
 import type { ArchiveSummary } from "@/lib/game/archive";
 import { roman } from "@/lib/roman";
 import { PLAIN_WAX, WaxSeal } from "@/components/Seal";
+import { play } from "@/lib/sound";
 
 /**
  * End of a season (SPEC, Animations): the map rolls itself up, the scroll is sealed with
@@ -17,6 +18,7 @@ export function KnellOverlay({ season, onClose }: { season: ArchiveSummary; onCl
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
+    play("knell");
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);

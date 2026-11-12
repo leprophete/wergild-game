@@ -91,7 +91,11 @@ export default function RankingClient() {
                     <span className="text-parchment/45">#{i + 1}</span> {fac.name}
                   </div>
                   <div className="font-mono text-sm sm:text-lg">{fmt(f.points)} pts</div>
-                  <div className="font-mono text-[11px] text-parchment/45">+{fmt(f.lastHour)} last hour</div>
+                  <div className="font-mono text-[11px] text-parchment/45">
+                    +{fmt(f.lastHour)}
+                    <span className="sm:hidden">/h</span>
+                    <span className="hidden sm:inline"> last hour</span>
+                  </div>
                 </div>
               </li>
             );
@@ -114,7 +118,7 @@ export default function RankingClient() {
           A cell&apos;s points are shared among its holders, pro rata to their force there.
         </p>
         {data.players.length === 0 ? (
-          <Lore className="mt-5 text-center">No deed has been sung yet this season. The first hour will tell.</Lore>
+          <Lore className="mx-auto mt-5 max-w-xl">No deed has been sung yet this season. The first hour will tell.</Lore>
         ) : (
           <table className="mt-4 w-full text-sm">
             <thead>

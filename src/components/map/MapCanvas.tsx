@@ -12,6 +12,7 @@ import {
   WORLD_W,
   buildOverlayIndex,
   buildDecor,
+  buildOverlayIndex as buildIndex,
   buildTerritoryGeometry,
   ownersKey,
   cx,
@@ -41,6 +42,17 @@ interface Props {
   seasonTitle: string;
   seasonSub: string;
   onSelect: (id: number | null) => void;
+  /** Home page preview: the live map, no input, no tooltip, no zoom buttons. */
+  preview?: boolean;
+  /** Cells that glow gently (the guided first deployment). */
+  highlight?: number[];
+  /** Hands the parent a way to draw the whole map elsewhere (the capture for X). */
+  onApi?: (api: MapApi) => void;
+}
+
+export interface MapApi {
+  /** Draws the whole world at `s` px per world unit, origin at the context's current transform. */
+  drawWorld: (ctx: CanvasRenderingContext2D, s: number) => boolean;
 }
 
 interface View {
@@ -54,7 +66,7 @@ const MAX_ZOOM_CELL_PX = 140;
 /** Canvas backing store: devicePixelRatio, capped (memory on 3× phones). */
 const MAX_DPR = 2;
 /** Screen strip kept clear at the top of the map, under the filter bar, when the whole map is shown. */
-const TOP_INSET = 52;
+const TOP_INSET_PX = 52;
 /** Wet ink dries and event countdowns tick: a full redraw this often, no more. */
 const SLOW_TICK_MS = 30_000;
 /** Margin around a cell repainted with it (selection ticks, dotted borders). */
@@ -113,7 +125,10 @@ export default function MapCanvas(props: Props) {
   const geoRef = useRef<TerritoryGeometry>({ key: "", zones: [] });
   const propsRef = useRef(props);
   propsRef.current = props;
+  /** The home preview has no filter bar to keep clear. */
+  const inset = () => (propsRef.current.preview ? 0 : TOP_INSET_PX);
   const [ready, setReady] = useState(false);
+  const pulseRef = useRef(0);
 
   // --- render scheduler -----------------------------------------------------
   const sched = useRef({ raf: 0, full: false, region: new Set<number>() });
@@ -139,17 +154,19 @@ export default function MapCanvas(props: Props) {
       crests: crestsRef.current,
       scale: viewRef.current.s,
       view,
+      highlight: p.highlight,
+      pulse: pulseRef.current,
     };
   };
 
   /** Illustration + decor + watercolour for a world rectangle (the canvas may be clipped to it). */
-  const drawBase = (ctx: CanvasRenderingContext2D, rect: WorldRect) => {
+  const drawBase = (ctx: CanvasRenderingContext2D, rect: WorldRect, devPx?: number) => {
     const { dpr } = sizeRef.current;
     const v = viewRef.current;
     const p = propsRef.current;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
-    imageryRef.current!.draw(ctx, rect, dpr * v.s);
+    imageryRef.current!.draw(ctx, rect, devPx ?? dpr * v.s);
     // watercolour bands: multiply, like pigment on paper (soft by nature: a cached layer)
     const terr = terrRef.current!;
     const R = resRef.current;
@@ -247,7 +264,7 @@ export default function MapCanvas(props: Props) {
   // --- view helpers ---------------------------------------------------------
   const fitScale = () => {
     const { w, h } = sizeRef.current;
-    return Math.min(w / WORLD_W, (h - TOP_INSET) / WORLD_H);
+    return Math.min(w / WORLD_W, (h - inset()) / WORLD_H);
   };
   /** The closest zoom that stays sharp: the 4× master, stretched at most MAX_STRETCH on this screen. */
   const maxScale = () => Math.min(MAX_ZOOM_CELL_PX / CELL, (LEVEL_RES.l4 * MAX_STRETCH) / sizeRef.current.dpr);
@@ -261,7 +278,7 @@ export default function MapCanvas(props: Props) {
     const pad = 40;
     const tx = mw <= w ? (w - mw) / 2 : Math.min(pad, Math.max(w - mw - pad, v.tx));
     const ty =
-      mh <= h - TOP_INSET ? TOP_INSET + (h - TOP_INSET - mh) / 2 : Math.min(TOP_INSET, Math.max(h - mh - pad, v.ty));
+      mh <= h - inset() ? inset() + (h - inset() - mh) / 2 : Math.min(inset(), Math.max(h - mh - pad, v.ty));
     return { s, tx, ty };
   };
   const setView = (v: View) => {
@@ -281,8 +298,8 @@ export default function MapCanvas(props: Props) {
     // On narrow screens open at a readable zoom centred on the player's homeland.
     const s = fitScale();
     const mine = propsRef.current.myFaction;
-    if (w < 700) {
-      const ns = Math.max(s, (h - TOP_INSET) / WORLD_H);
+    if (w < 700 && !propsRef.current.preview) {
+      const ns = Math.max(s, (h - inset()) / WORLD_H);
       const b = mine ? FACTION_BY_ID[mine].base : null;
       const fx = b ? cx(b.x + 1) : WORLD_W / 2;
       const fy = b ? cy(b.y + 1) : WORLD_H / 2;
@@ -396,6 +413,58 @@ export default function MapCanvas(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
+  // --- the capture: the whole map drawn into another canvas -------------------
+  useEffect(() => {
+    if (!ready || !props.onApi) return;
+    props.onApi({
+      drawWorld: (ctx, s) => {
+        if (!imageryRef.current || !decorRef.current || !terrRef.current || !fontsRef.current) return false;
+        const p = propsRef.current;
+        const rect = { x0: 0, y0: 0, x1: WORLD_W, y1: WORLD_H };
+        drawBase(ctx, rect, s);
+        drawOverlay(
+          ctx,
+          {
+            cells: p.cells,
+            index: buildIndex(p.cells, p.events, "all", Date.now()),
+            territory: geoRef.current,
+            selectedId: null,
+            hoverId: null,
+            now: Date.now(),
+            fonts: fontsRef.current,
+            crests: crestsRef.current,
+            scale: s,
+            view: rect,
+          },
+          0,
+        );
+        return true;
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // --- the guided first deployment: the cells you may deploy on glow gently ---------
+  // A slow pulse (about 12 repaints a second, only those cells), and only while the guide runs.
+  const highlightKey = (props.highlight ?? []).join(",");
+  useEffect(() => {
+    const ids = propsRef.current.highlight ?? [];
+    if (!ready) return;
+    invalidate();
+    if (!ids.length) return;
+    const still = reducedMotion();
+    pulseRef.current = still ? 0.6 : 0;
+    if (still) return;
+    const t0 = performance.now();
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      pulseRef.current = 0.5 - 0.5 * Math.cos(((performance.now() - t0) / 1800) * Math.PI * 2);
+      invalidate(ids);
+    }, 85);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, highlightKey]);
+
   // --- size ---------------------------------------------------------------
   useEffect(() => {
     const wrap = wrapRef.current!;
@@ -434,6 +503,7 @@ export default function MapCanvas(props: Props) {
 
   // --- input: pan, pinch, wheel, tap ----------------------------------------
   useEffect(() => {
+    if (propsRef.current.preview) return;
     const canvas = canvasRef.current!;
     const pointers = new Map<number, { x: number; y: number }>();
     let tap: { x: number; y: number; time: number; moved: boolean } | null = null;
@@ -597,7 +667,7 @@ export default function MapCanvas(props: Props) {
       <canvas
         ref={canvasRef}
         className="block h-full w-full touch-none select-none"
-        style={{ cursor: QUILL }}
+        style={{ cursor: props.preview ? "default" : QUILL }}
         aria-label="War map of the five Banners"
         role="img"
       />
@@ -613,6 +683,7 @@ export default function MapCanvas(props: Props) {
           Unrolling the map…
         </div>
       )}
+      {!props.preview && (
       <div className="absolute bottom-5 right-[68px] z-10 hidden flex-col overflow-hidden rounded-md border border-gold/40 bg-charcoal/85 text-parchment shadow-lg md:flex">
         <button className="h-9 w-9 text-lg hover:bg-gold/15" onClick={() => zoomBy(1.4)} aria-label="Zoom in">
           +
@@ -624,6 +695,7 @@ export default function MapCanvas(props: Props) {
           ⤢
         </button>
       </div>
+      )}
     </div>
   );
 }

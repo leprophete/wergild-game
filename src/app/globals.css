@@ -85,6 +85,26 @@ body {
 .knell-seal { animation: knell-stamp 0.55s ease-out 2.5s both; }
 .knell-text { animation: knell-fade 0.8s ease-out 3s both; }
 
+/* The grimoire on the home page: the cover swings open on its left hinge, then fades. */
+.grimoire-cover {
+  transition: transform 1.5s cubic-bezier(0.45, 0.05, 0.25, 1), opacity 0.5s ease 1.1s, visibility 0s linear 1.6s;
+  cursor: pointer;
+}
+.grimoire-cover:not(.is-open):hover {
+  transform: rotateY(-7deg);
+}
+.grimoire-cover.is-open {
+  transform: rotateY(-168deg);
+  opacity: 0;
+  visibility: hidden;
+  cursor: default;
+}
+@keyframes grimoire-hint {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.grimoire-hint { animation: grimoire-hint 2.6s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   .banner-sway,
   .feed-new {
@@ -98,5 +118,12 @@ body {
   .knell-text {
     animation-duration: 1ms;
     animation-delay: 0s;
+  }
+  .grimoire-cover {
+    transition-duration: 1ms;
+    transition-delay: 0s;
+  }
+  .grimoire-hint {
+    animation: none;
   }
 }

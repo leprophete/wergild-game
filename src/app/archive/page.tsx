@@ -36,7 +36,7 @@ export default async function ArchivePage() {
         <section aria-label="Hall of Fame" className="mt-8">
           <h2 className="text-center font-display text-sm tracking-[0.18em] text-gold">HALL OF FAME</h2>
           {winners.length === 0 ? (
-            <Lore className="mt-3 text-center">No banner has been embroidered yet. The first knell will tell.</Lore>
+            <Lore className="mx-auto mt-3 max-w-xl">No banner has been embroidered yet. The first knell will tell.</Lore>
           ) : (
             <div className="relative mx-auto mt-4 max-w-3xl">
               <div className="absolute inset-x-0 top-0 h-[4px] rounded-full bg-gradient-to-r from-transparent via-gold/80 to-transparent" />
@@ -67,7 +67,7 @@ export default async function ArchivePage() {
           {failed ? (
             <p className="text-center font-fell italic text-parchment/60">The Chronicles could not be opened. Try again in a moment.</p>
           ) : seasons.length === 0 ? (
-            <Lore className="text-center">The Chronicles are still blank. When a season ends, its map is rolled, sealed and kept here.</Lore>
+            <Lore className="mx-auto max-w-xl">The Chronicles are still blank. When a season ends, its map is rolled, sealed and kept here.</Lore>
           ) : (
             <ul className="grid gap-4 sm:grid-cols-2">
               {seasons.map((s) => {

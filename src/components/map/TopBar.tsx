@@ -7,7 +7,7 @@ import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { useNow } from "@/lib/useNow";
 
 /** Only this span re-renders every second. */
-function Countdown({ endsAt }: { endsAt: number }) {
+export function Countdown({ endsAt }: { endsAt: number }) {
   const now = useNow(1000);
   return <span className="text-parchment/90">{formatRemaining(endsAt - now)}</span>;
 }
@@ -39,7 +39,7 @@ export function TopBar({
     <header className="relative z-30 flex shrink-0 flex-col border-b border-gold/40 bg-charcoal lg:h-[150px] lg:flex-row lg:items-start">
       <div className="pointer-events-none absolute inset-x-0 bottom-[3px] h-px bg-gold/20" />
       <div className="flex h-12 min-w-0 items-center gap-3 px-3 max-md:pr-36 md:px-5 lg:h-14 lg:max-w-[calc(50%-300px)] 2xl:max-w-[calc(50%-480px)]">
-        <Link href="/map" className="shrink-0 font-display text-lg font-bold tracking-[0.12em] text-gold md:text-xl">
+        <Link href="/" className="shrink-0 font-display text-lg font-bold tracking-[0.12em] text-gold md:text-xl">
           $WERGILD
         </Link>
         <div className="hidden h-6 w-px shrink-0 bg-gold/30 sm:block" />
