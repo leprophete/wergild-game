@@ -1,9 +1,10 @@
 import rough from "roughjs";
 import { COOLDOWN_MINUTES, GRID_H, GRID_W } from "@config/game";
-import { FACTIONS, FACTION_BY_ID, type FactionId } from "@/lib/factions";
+import { FACTION_BY_ID, type FactionId } from "@/lib/factions";
 import { STATIC_CELLS, cellId, isPlayable } from "./layout";
 import { WATCHTOWER_CELLS } from "./mask";
 import { inZone, isContested, type CellState, type GameEvent } from "./state";
+import { computeZones, type Pt } from "./zones";
 
 // ---------------------------------------------------------------------------
 // World geometry (world units; the canvas transform does the zoom).
@@ -20,9 +21,6 @@ export const PARCH = "#E6D8B8";
 export const GOLD = "#C9A24B";
 export const BLOOD = "#8E1B1B";
 export const CHARCOAL = "#141210";
-
-/** Opacity of a Banner's wash over the illustration (multiply). */
-export const WASH_ALPHA = 0.42;
 
 export interface Fonts {
   cinzel: string;
@@ -236,57 +234,139 @@ function drawCompass(ctx: Ctx, fonts: Fonts) {
 }
 
 // ---------------------------------------------------------------------------
-// Territory layer (cached canvas): one flat colour per held cell, transparent
-// elsewhere. Composited ONCE as a whole at WASH_ALPHA with "multiply", so a zone
-// reads as a single transparent wash with no seams between its cells.
+// Territories: FRONTIERS, not fills. Each zone (adjacent cells of one Banner) gets a
+// smoothed contour cut to the land mask — dark ink ~4 px under the Banner's bright
+// colour ~2.5 px — and an inner gradient from 35 % on the frontier to nothing within
+// ~1.5 cells. No fill in the middle; one crest at the zone's centre.
+// The geometry and the gradient are computed ONCE per change of owners (cached canvas);
+// only the two strokes are drawn at render time, so they stay ~4 / ~2.5 screen px.
 // ---------------------------------------------------------------------------
-export function drawTerritory(canvas: HTMLCanvasElement, R: number, cells: CellState[]) {
+export const FRONTIER_INK_PX = 4;
+export const FRONTIER_COLOUR_PX = 2.5;
+const GRADIENT_START_ALPHA = 0.35;
+const GRADIENT_DEPTH = 1.5 * CELL;
+const GRADIENT_STEPS = 10;
+
+export interface ZoneShape {
+  owner: FactionId;
+  /** the drawn frontier: open runs of the smoothed contour, never along the water */
+  frontier: Path2D;
+  /** the zone's area (all rings, even-odd), to keep the gradient inside */
+  area: Path2D;
+  crest: { x: number; y: number; size: number };
+}
+
+export interface TerritoryGeometry {
+  key: string;
+  zones: ZoneShape[];
+}
+
+let landClip: Path2D | null = null;
+/** Union of the playable cells: every frontier stroke is clipped to it. */
+export function landPath(): Path2D {
+  if (landClip) return landClip;
+  landClip = new Path2D();
+  for (const c of STATIC_CELLS) if (c.terrain !== "water") landClip.rect(cx(c.x), cy(c.y), CELL, CELL);
+  return landClip;
+}
+
+/** Owners of the playable cells, as a string: the geometry is rebuilt only when it changes. */
+export const ownersKey = (cells: CellState[]) =>
+  cells.map((c) => (STATIC_CELLS[c.id].terrain === "water" || !c.owner ? "." : c.owner[0])).join("");
+
+export function buildTerritoryGeometry(cells: CellState[]): TerritoryGeometry {
+  const owners = new Array<FactionId | null>(GRID_W * GRID_H).fill(null);
+  for (const c of cells) owners[c.id] = c.owner;
+  const zones = computeZones(owners, isPlayable).map((z) => {
+    const frontier = new Path2D();
+    const area = new Path2D();
+    for (const ring of z.rings) {
+      const n = ring.points.length;
+      const P = ring.points.map(([x, y]) => [x * CELL, y * CELL] as Pt);
+      area.moveTo(P[0][0], P[0][1]);
+      for (let i = 1; i < n; i++) area.lineTo(P[i][0], P[i][1]);
+      area.closePath();
+      // frontier runs: start after a water segment so a run never wraps around index 0
+      const firstWater = ring.frontier.findIndex((f) => !f);
+      if (firstWater === -1) {
+        frontier.moveTo(P[0][0], P[0][1]);
+        for (let i = 1; i < n; i++) frontier.lineTo(P[i][0], P[i][1]);
+        frontier.closePath();
+        continue;
+      }
+      let drawing = false;
+      for (let k = 1; k <= n; k++) {
+        const i = (firstWater + k) % n;
+        const a = P[i];
+        const b = P[(i + 1) % n];
+        if (ring.frontier[i]) {
+          if (!drawing) frontier.moveTo(a[0], a[1]);
+          frontier.lineTo(b[0], b[1]);
+          drawing = true;
+        } else drawing = false;
+      }
+    }
+    return { owner: z.owner, frontier, area, crest: { x: z.crest.x * CELL, y: z.crest.y * CELL, size: z.crest.size * CELL } };
+  });
+  return { key: ownersKey(cells), zones };
+}
+
+/** Cached layer: the inner gradients and the crests (strokes are drawn live). */
+export function drawTerritory(
+  canvas: HTMLCanvasElement,
+  R: number,
+  geo: TerritoryGeometry,
+  crests: Partial<Record<FactionId, HTMLImageElement>>,
+) {
   const ctx = canvas.getContext("2d")!;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(R, 0, 0, R, 0, 0);
-  for (const c of cells) {
-    const sc = STATIC_CELLS[c.id];
-    if (!c.owner || sc.terrain === "water") continue;
-    ctx.fillStyle = FACTION_BY_ID[c.owner].color;
-    // a hair of overlap avoids hairline gaps when the layer is scaled
-    ctx.fillRect(cx(sc.x) - 0.3, cy(sc.y) - 0.3, CELL + 0.6, CELL + 0.6);
+  // each step adds the same opacity; GRADIENT_STEPS of them reach the start alpha on the frontier
+  const stepAlpha = 1 - Math.pow(1 - GRADIENT_START_ALPHA, 1 / GRADIENT_STEPS);
+  const land = landPath();
+  for (const z of geo.zones) {
+    ctx.save();
+    ctx.clip(z.area, "evenodd");
+    ctx.clip(land);
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.strokeStyle = rgba(FACTION_BY_ID[z.owner].color, stepAlpha);
+    for (let k = GRADIENT_STEPS; k >= 1; k--) {
+      ctx.lineWidth = (2 * GRADIENT_DEPTH * k) / GRADIENT_STEPS;
+      ctx.stroke(z.frontier);
+    }
+    ctx.restore();
   }
+  for (const z of geo.zones) {
+    const img = crests[z.owner];
+    if (!img || !img.complete || !img.naturalWidth) continue;
+    const h = z.crest.size;
+    const w = (img.naturalWidth / img.naturalHeight) * h;
+    ctx.shadowColor = "rgba(0,0,0,0.45)";
+    ctx.shadowBlur = h * 0.12;
+    ctx.shadowOffsetY = h * 0.04;
+    ctx.drawImage(img, z.crest.x - w / 2, z.crest.y - h / 2, w, h);
+  }
+  ctx.shadowColor = "transparent";
 }
 
-/**
- * One ink frontier around each held zone: an edge is drawn only where the two sides
- * do not belong to the same Banner (coast and map edge included) — adjacent cells of a
- * Banner merge into a single contour.
- */
-export function buildBorderPath(cells: CellState[]): Path2D {
-  const path = new Path2D();
-  const owner = (x: number, y: number) => {
-    if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H || !isPlayable(x, y)) return null;
-    return cells[cellId(x, y)]?.owner ?? null;
-  };
-  for (let y = 0; y <= GRID_H; y++) {
-    for (let x = 0; x <= GRID_W; x++) {
-      const here = owner(x, y);
-      // vertical edge on the left of (x, y)
-      if (y < GRID_H) {
-        const left = owner(x - 1, y);
-        if (here !== left && (here || left)) {
-          path.moveTo(cx(x), cy(y));
-          path.lineTo(cx(x), cy(y + 1));
-        }
-      }
-      // horizontal edge above (x, y)
-      if (x < GRID_W) {
-        const up = owner(x, y - 1);
-        if (here !== up && (here || up)) {
-          path.moveTo(cx(x), cy(y));
-          path.lineTo(cx(x + 1), cy(y));
-        }
-      }
-    }
+/** The frontier strokes, at constant screen width. */
+function drawFrontiers(ctx: Ctx, geo: TerritoryGeometry, scale: number) {
+  if (!geo.zones.length) return;
+  ctx.save();
+  ctx.clip(landPath());
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "rgba(20,14,8,0.92)";
+  ctx.lineWidth = FRONTIER_INK_PX / scale;
+  for (const z of geo.zones) ctx.stroke(z.frontier);
+  ctx.lineWidth = FRONTIER_COLOUR_PX / scale;
+  for (const z of geo.zones) {
+    ctx.strokeStyle = FACTION_BY_ID[z.owner].color;
+    ctx.stroke(z.frontier);
   }
-  return path;
+  ctx.restore();
 }
 
 /** Every edge of the playable cells: the discreet grid. */
@@ -338,7 +418,6 @@ export interface OverlayIndex {
   /** cells dimmed by the active filter (null = no filter) */
   fog: number[] | null;
   events: GameEvent[];
-  borders: Path2D | null;
 }
 
 export function buildOverlayIndex(cells: CellState[], events: GameEvent[], filter: MapFilter, now: number): OverlayIndex {
@@ -360,12 +439,13 @@ export function buildOverlayIndex(cells: CellState[], events: GameEvent[], filte
           : new Set(cells.filter((c) => active.some((e) => inZone(c.id % GRID_W, Math.floor(c.id / GRID_W), e.zone))).map((c) => c.id));
     fog = cells.filter((c) => !keep.has(c.id) && STATIC_CELLS[c.id].terrain !== "water").map((c) => c.id);
   }
-  return { contested, mine, fog, events: active, borders: cells.length ? buildBorderPath(cells) : null };
+  return { contested, mine, fog, events: active };
 }
 
 export interface OverlayInput {
   cells: CellState[];
   index: OverlayIndex;
+  territory: TerritoryGeometry;
   selectedId: number | null;
   hoverId: number | null;
   now: number;
@@ -404,24 +484,7 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
     for (const id of pick(index.fog)) ctx.fillRect(cx(id % GRID_W), cy(Math.floor(id / GRID_W)), CELL, CELL);
   }
 
-  // one dotted ink frontier around each zone
-  if (index.borders) {
-    ctx.save();
-    ctx.setLineDash([4, 3]);
-    ctx.lineCap = "butt";
-    ctx.lineWidth = Math.max(1.4, 1.3 * px);
-    ctx.strokeStyle = rgba(INK, 0.85);
-    ctx.stroke(index.borders);
-    ctx.restore();
-  }
-
-  for (const f of FACTIONS) {
-    const img = o.crests[f.id];
-    if (!img || !img.complete || !img.naturalWidth) continue;
-    const h = CELL * 1.7;
-    const w = (img.naturalWidth / img.naturalHeight) * h;
-    ctx.drawImage(img, cx(f.base.x) + CELL - w / 2, cy(f.base.y) + CELL - h / 2, w, h);
-  }
+  drawFrontiers(ctx, o.territory, o.scale);
 
   const contested = pick(index.contested);
   if (contested.length) {
@@ -573,8 +636,8 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
 
 // ---------------------------------------------------------------------------
 // Animations (SPEC "Animations"), drawn over the final state, only on their cells:
-//   deploy   — pawns drawn with the quill (~400 ms), then the wash spreads from the centre
-//   conquest — the old colour burns away from the edges, then the new one spreads
+//   deploy   — pawns drawn with the quill (~400 ms)
+//   conquest — the old colour burns away from the edges, then the new colour flashes
 //   retreat  — the soldiers are struck through with a pen stroke and the wash fades
 // ---------------------------------------------------------------------------
 export type AnimKind = "deploy" | "conquest" | "retreat";
@@ -633,25 +696,7 @@ function pawns(ctx: Ctx, cx0: number, cy0: number, reveal: number) {
   ctx.restore();
 }
 
-export interface Backdrop {
-  canvas: HTMLCanvasElement;
-  R: number;
-}
-
-/** Repaints the bare illustration over the cell except a growing disc: the wash seems to spread. */
-function spread(ctx: Ctx, bd: Backdrop, x: number, y: number, t: number) {
-  const r = ease(t) * CELL * 0.75;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x, y, CELL, CELL);
-  ctx.arc(x + CELL / 2, y + CELL / 2, Math.max(0.1, r), 0, Math.PI * 2, true);
-  ctx.clip("evenodd");
-  ctx.globalAlpha = 1 - ease(t) * 0.25;
-  ctx.drawImage(bd.canvas, x * bd.R, y * bd.R, CELL * bd.R, CELL * bd.R, x, y, CELL, CELL);
-  ctx.restore();
-}
-
-export function drawAnimations(ctx: Ctx, anims: CellAnim[], now: number, bd: Backdrop): CellAnim[] {
+export function drawAnimations(ctx: Ctx, anims: CellAnim[], now: number): CellAnim[] {
   const alive: CellAnim[] = [];
   for (const a of anims) {
     const dt = now - a.start;
@@ -664,36 +709,33 @@ export function drawAnimations(ctx: Ctx, anims: CellAnim[], now: number, bd: Bac
     const my = y + CELL / 2;
 
     if (a.kind === "deploy") {
-      if (!a.from && a.to) spread(ctx, bd, x, y, (dt - 400) / 800);
       ctx.globalAlpha = dt < 900 ? 1 : 1 - (dt - 900) / 300;
       pawns(ctx, mx, my, Math.min(1, dt / 400));
       ctx.globalAlpha = 1;
     } else if (a.kind === "conquest") {
-      const burn = dt / 700; // phase 1: the old colour burns from the edges inward
+      // the old colour burns from the edges inward, then the new frontier stands
+      const burn = dt / 900;
       if (burn < 1 && a.from) {
         const inset = ease(burn) * (CELL / 2);
-        ctx.drawImage(bd.canvas, x * bd.R, y * bd.R, CELL * bd.R, CELL * bd.R, x, y, CELL, CELL);
-        ctx.globalCompositeOperation = "multiply";
-        ctx.fillStyle = rgba(FACTION_BY_ID[a.from].color, WASH_ALPHA);
+        ctx.fillStyle = rgba(FACTION_BY_ID[a.from].color, 0.45 * (1 - burn));
         ctx.fillRect(x + inset, y + inset, CELL - inset * 2, CELL - inset * 2);
-        ctx.globalCompositeOperation = "source-over";
         ctx.strokeStyle = `rgba(120,40,10,${0.85 * (1 - burn)})`;
         ctx.lineWidth = 2.2;
         ctx.strokeRect(x + inset, y + inset, CELL - inset * 2, CELL - inset * 2);
         ctx.strokeStyle = `rgba(230,120,40,${0.6 * (1 - burn)})`;
         ctx.lineWidth = 1;
         ctx.strokeRect(x + inset + 1.2, y + inset + 1.2, CELL - inset * 2 - 2.4, CELL - inset * 2 - 2.4);
-      } else {
-        spread(ctx, bd, x, y, (dt - 700) / 900); // phase 2: the new colour spreads
+      } else if (a.to) {
+        // the new Banner's colour flashes once on the cell
+        ctx.fillStyle = rgba(FACTION_BY_ID[a.to].color, 0.35 * (1 - ease((dt - 900) / 700)));
+        ctx.fillRect(x, y, CELL, CELL);
       }
     } else {
       // retreat: soldiers struck through, the wash fades
       const t = dt / dur;
       if (a.from && !a.to) {
-        ctx.globalCompositeOperation = "multiply";
-        ctx.fillStyle = rgba(FACTION_BY_ID[a.from].color, WASH_ALPHA * (1 - ease(t)));
+        ctx.fillStyle = rgba(FACTION_BY_ID[a.from].color, 0.3 * (1 - ease(t)));
         ctx.fillRect(x, y, CELL, CELL);
-        ctx.globalCompositeOperation = "source-over";
       }
       ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
       pawns(ctx, mx, my, 1);

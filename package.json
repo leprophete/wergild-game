@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "seed:gen": "tsx scripts/gen-seed.ts",
-    "devnet": "tsx scripts/devnet-token.ts"
+    "devnet": "tsx scripts/devnet-token.ts",
+    "test": "tsx tests/zones.test.ts"
   },
   "dependencies": {
     "@solana/wallet-adapter-base": "^0.9.28",

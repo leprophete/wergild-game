@@ -8,11 +8,11 @@
   --color-ink: #2a1f14;
   --color-gold: #c9a24b;
   --color-blood: #8e1b1b;
-  --color-goblins: #5c8a3a;
-  --color-changelings: #8db3c7;
-  --color-knaves: #7a2e5c;
-  --color-unburied: #3b3b3b;
-  --color-wretches: #b5552b;
+  --color-goblins: #8fd13a;
+  --color-changelings: #8fd3f0;
+  --color-knaves: #c04bb0;
+  --color-unburied: #ede4cc;
+  --color-wretches: #e5482e;
 
   --font-display: var(--nf-cinzel), serif;
   --font-fell: var(--nf-fell), serif;
@@ -41,16 +41,6 @@ body {
   animation: banner-sway 6s ease-in-out infinite;
 }
 
-/* Miniature banner length follows the season score (--k in 0..1). */
-/* They hang from the header rail, so the rail must fit the longest one plus its score label. */
-.mini-banner {
-  height: calc(30px + var(--k, 0) * 18px); /* rail 66px */
-}
-@media (min-width: 768px) {
-  .mini-banner {
-    height: calc(44px + var(--k, 0) * 40px); /* rail 104px */
-  }
-}
 
 @keyframes feed-new {
   from {

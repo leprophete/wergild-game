@@ -37,9 +37,9 @@ export function TopBar({
   children?: React.ReactNode;
 }) {
   return (
-    <header className="relative z-30 flex shrink-0 flex-col border-b border-gold/40 bg-charcoal md:h-[104px] md:flex-row md:items-start">
+    <header className="relative z-30 flex shrink-0 flex-col border-b border-gold/40 bg-charcoal md:h-[150px] md:flex-row md:items-start">
       <div className="pointer-events-none absolute inset-x-0 bottom-[3px] h-px bg-gold/20" />
-      <div className="flex h-12 min-w-0 items-center gap-3 px-3 max-md:pr-36 md:h-14 md:max-w-[calc(50%-180px)] md:px-5">
+      <div className="flex h-12 min-w-0 items-center gap-3 px-3 max-md:pr-36 md:h-14 md:max-w-[calc(50%-300px)] md:px-5 2xl:max-w-[calc(50%-480px)]">
         <Link href="/map" className="shrink-0 font-display text-lg font-bold tracking-[0.12em] text-gold md:text-xl">
           $WERGILD
         </Link>
@@ -56,12 +56,34 @@ export function TopBar({
       </div>
       <ConnectButton className="absolute right-3 top-2 z-10 md:right-5 md:top-3" />
       {/* banner rail: its own row on mobile, centred in the header on desktop */}
-      <div className="relative h-[66px] md:absolute md:inset-x-0 md:top-0 md:h-full md:pointer-events-none">{children}</div>
+      <div className="relative h-[108px] md:absolute md:inset-x-0 md:top-0 md:h-full md:pointer-events-none">{children}</div>
     </header>
   );
 }
 
-/** The five miniature banners hanging from the header rail; their length follows the season score. */
+/** A small gold crown, above the leading Banner. */
+function Crown() {
+  return (
+    <svg viewBox="0 0 24 14" className="h-3 w-6 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)] md:h-[14px] md:w-7" aria-label="First">
+      <path
+        d="M2 12 L3.5 3.5 L8 8 L12 1.5 L16 8 L20.5 3.5 L22 12 Z"
+        fill="#C9A24B"
+        stroke="#2A1F14"
+        strokeWidth="1"
+        strokeLinejoin="round"
+      />
+      <circle cx="3.5" cy="3.2" r="1.3" fill="#E6D8B8" stroke="#2A1F14" strokeWidth="0.6" />
+      <circle cx="12" cy="1.4" r="1.3" fill="#E6D8B8" stroke="#2A1F14" strokeWidth="0.6" />
+      <circle cx="20.5" cy="3.2" r="1.3" fill="#E6D8B8" stroke="#2A1F14" strokeWidth="0.6" />
+    </svg>
+  );
+}
+
+/**
+ * The five banners of the header, ranked by season score (highest on the left), with a
+ * crown above the first. Under each: the Banner's name and its points. The player's own
+ * Banner has a golden halo.
+ */
 export function MiniBanners({
   scores,
   myFaction,
@@ -71,37 +93,49 @@ export function MiniBanners({
   myFaction: FactionId | null;
   onPick?: (f: FactionId) => void;
 }) {
-  const max = Math.max(1, ...Object.values(scores));
-  const ranked = [...FACTIONS].sort((a, b) => scores[b.id] - scores[a.id]);
-  const rank = Object.fromEntries(ranked.map((f, i) => [f.id, i + 1])) as Record<FactionId, number>;
+  const ranked = FACTIONS.map((f, i) => ({ f, i }))
+    .sort((a, b) => scores[b.f.id] - scores[a.f.id] || a.i - b.i)
+    .map((e) => e.f);
+  const leader = ranked[0];
+  const leads = scores[leader.id] > 0;
   return (
-    <div className="pointer-events-none absolute left-1/2 top-0 flex -translate-x-1/2 items-start gap-3 md:gap-4">
+    <div className="pointer-events-none absolute left-1/2 top-0 flex -translate-x-1/2 items-start gap-1 md:gap-2">
       <div className="absolute -inset-x-3 top-[3px] h-[3px] rounded-full bg-gradient-to-r from-transparent via-gold/70 to-transparent" />
-      {FACTIONS.map((f, i) => {
-        const k = scores[f.id] / max;
+      {ranked.map((f, i) => {
+        const mine = f.id === myFaction;
+        const pts = scores[f.id].toLocaleString("en-US");
         return (
           <button
             key={f.id}
             onClick={() => onPick?.(f.id)}
-            className="banner-sway pointer-events-auto group flex flex-col items-center"
-            style={{ animationDelay: `${-i * 0.9}s` }}
-            title={`${f.name} — ${scores[f.id].toLocaleString("en-US")} pts`}
+            className="pointer-events-auto group flex w-[68px] flex-col items-center md:w-[112px] 2xl:w-[186px]"
+            title={`#${i + 1} ${f.name} · ${pts} pts`}
+            aria-label={`Rank ${i + 1}: ${f.name}, ${pts} points${mine ? " (your Banner)" : ""}`}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={f.banner}
-              alt={f.name}
-              draggable={false}
-              className="mini-banner w-auto drop-shadow-[0_4px_6px_rgba(0,0,0,0.6)] transition-[height] duration-700"
-              style={{ ["--k" as string]: k }}
-            />
-            <span
-              className={`-mt-1 rounded-sm border px-1 font-mono text-[9px] leading-4 md:text-[10px] ${
-                f.id === myFaction ? "border-gold bg-charcoal text-gold" : "border-gold/30 bg-charcoal/90 text-parchment/80"
-              }`}
+            <div className="flex h-3 items-end md:h-[14px]">{i === 0 && leads ? <Crown /> : null}</div>
+            <div className="banner-sway" style={{ animationDelay: `${-i * 0.9}s` }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={f.banner}
+                alt=""
+                draggable={false}
+                className={`h-[60px] w-auto md:h-[90px] ${
+                  mine
+                    ? "drop-shadow-[0_0_6px_rgba(232,196,104,0.95)] [filter:drop-shadow(0_0_6px_rgba(232,196,104,0.95))_drop-shadow(0_0_14px_rgba(201,162,75,0.7))]"
+                    : "drop-shadow-[0_4px_6px_rgba(0,0,0,0.6)]"
+                }`}
+              />
+            </div>
+            <div
+              className={`mt-0.5 text-center leading-tight ${mine ? "text-gold" : "text-parchment/85"}`}
             >
-              <span className="text-parchment/50">#{rank[f.id]}</span> {scores[f.id].toLocaleString("en-US")}
-            </span>
+              <span className="block font-display text-[8px] leading-[9px] tracking-[0.04em] md:inline md:whitespace-nowrap md:text-[10.5px] md:leading-tight md:tracking-[0.06em]">{f.name}</span>
+              {/* one line "The Goblins · 120 pts" when there is room, two lines otherwise */}
+              <span className="hidden text-parchment/45 2xl:inline"> · </span>
+              <span className="block whitespace-nowrap font-mono text-[9px] text-parchment/70 md:text-[10.5px] 2xl:inline">
+                {pts} pts
+              </span>
+            </div>
           </button>
         );
       })}

@@ -77,14 +77,14 @@ Où on voit les bannières : les 5 suspendues côte à côte sur `/join`, en en-
 | Situation | Rendu |
 | --- | --- |
 | Case neutre | Parchemin nu |
-| Case tenue par une Bannière | Lavis (encre diluée) de la couleur de la Bannière |
-| Force de la garnison | Densité des hachures gravées : hachures espacées si elle est faible, hachures croisées serrées si elle est forte |
+| Zone tenue par une Bannière | Frontière : les cases adjacentes d'une Bannière fusionnent en une zone, dont le contour est lissé en courbes et coupé au masque de terre (il ne passe jamais sur l'eau). Trait d'encre sombre (~4 px) puis trait de la couleur vive de la Bannière (~2,5 px) par-dessus, et un dégradé intérieur qui part à 35 % d'opacité sur la frontière et s'efface en 1 à 2 cases. Pas de remplissage au centre. Un seul écu au centre de chaque zone, à une taille proportionnelle à la zone |
+| Force de la garnison | Affichée dans le panneau de la case (barres par Bannière) |
 | Mes cases | Contour doré |
 | Case disputée (écart de moins de 10 % entre les deux premières Bannières) | Bordure en pointillé rouge sang qui pulse doucement |
 | Case bonus | Une tour de guet dessinée |
 | Soldats récemment déplacés (cooldown) | Chiffre à l'encre brillante, « encore humide », qui sèche en 1 h |
 
-Les hachures reprennent la technique des gravures anciennes : on lit le rapport de force d'un coup d'œil, sans chiffres. L'encre humide montre le cooldown sans compte à rebours.
+Le fond de la carte est l'illustration `public/map/world.png` ; la grille 48 × 30 s'y superpose, très discrète, visible seulement au survol et au zoom. Les cases de mer et de fleuve sont injouables (masque terre/mer). L'encre humide montre le cooldown sans compte à rebours.
 
 ### Palette
 
@@ -96,13 +96,13 @@ Les hachures reprennent la technique des gravures anciennes : on lit le rapport 
 | Traits de la carte, texte gravé | Encre sépia | #2A1F14 |
 | Filets, ornements, mes cases | Or | #C9A24B |
 | Alertes, cases disputées | Rouge sang | #8E1B1B |
-| The Goblins (sur la carte) | Vert-de-gris | #5C8A3A |
-| The Changelings | Argent bleuté | #8DB3C7 |
-| The Knaves | Pourpre | #7A2E5C |
-| The Unburied | Noir d'os | #3B3B3B |
-| The Wretches | Rouille | #B5552B |
+| The Goblins (sur la carte) | Vert vif | #8FD13A |
+| The Changelings | Bleu glacier | #8FD3F0 |
+| The Knaves | Pourpre vif | #C04BB0 |
+| The Unburied | Os | #EDE4CC |
+| The Wretches | Rouge braise | #E5482E |
 
-Sur la carte, les couleurs des Bannières s'appliquent en lavis (opacité 0,5) avec le mode de fusion `multiply`, comme de l'encre sur du papier. Les cinq teintes sont choisies pour rester distinctes, y compris pour les daltoniens les plus courants ; les hachures servent de second repère.
+Sur la carte, les couleurs des Bannières dessinent les frontières des zones (pas de lavis plein, qui disparaissait sur les terrains de même couleur). Les cinq teintes sont vives pour rester distinctes sur l'illustration ; le trait d'encre sombre sous chaque frontière et l'écu au centre de la zone servent de second repère.
 
 ### Typographies
 

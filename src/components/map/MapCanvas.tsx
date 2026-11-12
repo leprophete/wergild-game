@@ -7,10 +7,11 @@ import type { CellState, GameEvent } from "@/lib/map/state";
 import {
   CELL,
   CHARCOAL,
-  WASH_ALPHA,
   WORLD_H,
   WORLD_W,
   buildOverlayIndex,
+  buildTerritoryGeometry,
+  ownersKey,
   cx,
   cy,
   diffAnimations,
@@ -24,6 +25,7 @@ import {
   type Fonts,
   type MapFilter,
   type OverlayIndex,
+  type TerritoryGeometry,
 } from "@/lib/map/render";
 
 interface Props {
@@ -72,7 +74,9 @@ interface RenderStats {
   region: number;
   lastFullMs: number;
   lastTerritoryMs: number;
+  /** number of zones in the last build */
   territoryCells: number;
+  geometryBuilds?: number;
 }
 
 /**
@@ -98,7 +102,8 @@ export default function MapCanvas(props: Props) {
   const hoverRef = useRef<number | null>(null);
   const animsRef = useRef<CellAnim[]>([]);
   const prevCellsRef = useRef<CellState[] | null>(null);
-  const indexRef = useRef<OverlayIndex>({ contested: [], mine: [], fog: null, events: [], borders: null });
+  const indexRef = useRef<OverlayIndex>({ contested: [], mine: [], fog: null, events: [] })
+  const geoRef = useRef<TerritoryGeometry>({ key: "", zones: [] });
   const propsRef = useRef(props);
   propsRef.current = props;
   const [ready, setReady] = useState(false);
@@ -112,6 +117,7 @@ export default function MapCanvas(props: Props) {
     return {
       cells: p.cells,
       index: indexRef.current,
+      territory: geoRef.current,
       selectedId: p.selectedId,
       hoverId: hoverRef.current,
       now,
@@ -133,12 +139,8 @@ export default function MapCanvas(props: Props) {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(bg, 0, 0, WORLD_W, WORLD_H);
-    ctx.globalCompositeOperation = "multiply";
-    ctx.globalAlpha = WASH_ALPHA;
     ctx.drawImage(terr, 0, 0, WORLD_W, WORLD_H);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
-    animsRef.current = drawAnimations(ctx, animsRef.current, t, { canvas: bg, R: resRef.current });
+    animsRef.current = drawAnimations(ctx, animsRef.current, t);
     drawOverlay(ctx, overlayInput(Date.now()), t);
   };
 
@@ -166,16 +168,10 @@ export default function MapCanvas(props: Props) {
       const x = cx(id % GRID_W) - PAD;
       const y = cy(Math.floor(id / GRID_W)) - PAD;
       const w = CELL + PAD * 2;
-      ctx.globalCompositeOperation = "source-over";
-      ctx.globalAlpha = 1;
       ctx.drawImage(bg, x * R, y * R, w * R, w * R, x, y, w, w);
-      ctx.globalCompositeOperation = "multiply";
-      ctx.globalAlpha = WASH_ALPHA;
       ctx.drawImage(terr, x * R, y * R, w * R, w * R, x, y, w, w);
     }
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
-    animsRef.current = drawAnimations(ctx, animsRef.current, t, { canvas: bg, R });
+    animsRef.current = drawAnimations(ctx, animsRef.current, t);
     drawOverlay(ctx, overlayInput(Date.now()), t, touched);
     ctx.restore();
   };
@@ -316,10 +312,13 @@ export default function MapCanvas(props: Props) {
     if (!ready || !terrRef.current) return;
     const prev = prevCellsRef.current;
     const t0 = performance.now();
-    if (!prev || prev !== props.cells) {
-      // one flat colour per held cell: redrawing the whole layer costs ~1 ms
-      drawTerritory(terrRef.current, resRef.current, props.cells);
-      statsRef.current.territoryCells = props.cells.length;
+    // frontiers, gradients and crests: rebuilt only when an owner changes
+    const key = ownersKey(props.cells);
+    if (key !== geoRef.current.key) {
+      geoRef.current = buildTerritoryGeometry(props.cells);
+      drawTerritory(terrRef.current, resRef.current, geoRef.current, crestsRef.current);
+      statsRef.current.territoryCells = geoRef.current.zones.length;
+      statsRef.current.geometryBuilds = (statsRef.current.geometryBuilds ?? 0) + 1;
     }
     if (prev && prev !== props.cells) {
       if (!reducedMotion()) {
