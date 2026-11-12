@@ -60,7 +60,7 @@ begin
   msg := public.season_tick(now());
   log := log || format(E'\n3 season_tick says: %s', msg);
   select * into arc from public.season_archives where season_id = s;
-  log := log || format(E'\n4 winner %s, scores goblins %s knaves %s (expect knaves: 10+2=12 vs 10+3=13)',
+  log := log || format(E'\n4 winner %s, scores goblins %s knaves %s (expect knaves: goblins 10+1=11 (the camp is worth nothing) vs 10+3=13)',
     arc.winner_faction_id, arc.scores->>'goblins', arc.scores->>'knaves');
   log := log || format(E'\n5 archived cells %s (expect 3: camp, c2, c3), top %s',
     jsonb_array_length(arc.cells), arc.top);

@@ -109,7 +109,7 @@ export default function RulesPage() {
             </p>
             <p>
               Each Banner starts the season with a <b>2 × 2 base camp</b> in its homeland. It is impregnable: it belongs to
-              its Banner all season, and only its members may deploy there.
+              its Banner all season, only its members may deploy there, and it scores <b>no point</b>.
             </p>
             <p>
               At most <b>{n(G.MAX_FORCE_PER_CELL)} force per player on one cell</b>. Soldiers just deployed or moved are held

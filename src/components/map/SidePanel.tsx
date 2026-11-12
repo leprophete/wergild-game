@@ -405,7 +405,7 @@ export function TheWar({
           </li>
         ))}
       </ol>
-      <p className="mt-1.5 text-[11px] text-parchment/40">Points every full hour (UTC): 1 per cell held, 3 per watchtower.</p>
+      <p className="mt-1.5 text-[11px] text-parchment/40">Points every full hour (UTC): 1 per cell held, 3 per watchtower; base camps score nothing.</p>
     </section>
   );
 }

@@ -27,13 +27,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 /** A few lines of lore per Banner (SPEC, "Les cinq Bannières"). */
 const LORE: Record<FactionId, string> = {
   goblins:
-    "Out of the Gnawing Pits they come, a twisted dagger between two fangs. What glitters is theirs, and they are quick to take it: the Goblins strike fast and count their gains.",
+    "Out of the Gnawing Pits they come, a crowned goblin head over two crossed daggers. What glitters is theirs, and they are quick to take it: the Goblins strike fast and count their gains.",
   changelings:
     "An empty cradle under a crescent moon. The Changelings were never anyone's, and they are patient: in the mists of the Cradle Fen, the old soldiers grow strong.",
   knaves:
     "A split mask and a key. From Knave's Hollow, the island in the river, the Knaves watch the bridges and take whatever is left unguarded. Nothing belongs to anyone.",
   unburied:
-    "A gravedigger's broken spade under a crown of bones. The Unburied fall and rise again from the Weeping Barrows: no grave can hold them, no dump can end them.",
+    "A crowned skull over two crossed gravedigger's spades. The Unburied fall and rise again from the Weeping Barrows: no grave can hold them, no dump can end them.",
   wretches:
     "A pitchfork and a torch, crossed. The Wretches are the many, the small holders of the Burnt Fields, and every one of them carries the war a little further.",
 };

@@ -103,7 +103,7 @@ export default function RankingClient() {
           })}
         </ol>
         <p className="mt-6 text-center text-xs text-parchment/45">
-          Scored every full hour (UTC), on each player&apos;s lowest force of the hour: 1 point per cell held, 3 per
+          Scored every full hour (UTC), on each player&apos;s lowest force of the hour: 1 point per cell held (base camps excepted), 3 per
           watchtower, ×3 inside the Tithe.
           {data.lastTick && (
             <span suppressHydrationWarning> Last tick {new Date(data.lastTick).toISOString().slice(11, 16)} UTC.</span>

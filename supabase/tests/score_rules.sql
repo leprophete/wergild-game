@@ -11,7 +11,7 @@ declare
   c text := 'ScoreTestCxxxxxxxxxxxxxxxxxxxxxxxxxx'; -- Wretches
   d text := 'ScoreTestDxxxxxxxxxxxxxxxxxxxxxxxxxx'; -- Goblins
   e text := 'ScoreTestExxxxxxxxxxxxxxxxxxxxxxxxxxx'; -- Knaves
-  c1 bigint; c2 bigint; c3 bigint; c4 bigint;
+  c1 bigint; c2 bigint; c3 bigint; c4 bigint; c5 bigint;
   r record;
 begin
   -- isolated season with five cells
@@ -22,7 +22,8 @@ begin
   insert into public.cells (season_id, x, y, kind) values (s, 1, 0, 'bonus') returning id into c2;
   insert into public.cells (season_id, x, y, kind) values (s, 2, 0, 'normal') returning id into c3;
   insert into public.cells (season_id, x, y, kind, owner_faction_id) values (s, 3, 0, 'normal', 'knaves') returning id into c4;
-  insert into public.cells (season_id, x, y, kind, base_faction_id, owner_faction_id) values (s, 4, 0, 'normal', 'wretches', 'wretches');
+  insert into public.cells (season_id, x, y, kind, base_faction_id, owner_faction_id)
+  values (s, 4, 0, 'normal', 'wretches', 'wretches') returning id into c5;  -- a base camp: worth no point
   -- The Tithe on cell 3 during the scored hour
   insert into public.events (season_id, type, zone_x, zone_y, zone_w, zone_h, announced_at, starts_at, ends_at)
   values (s, 'tithe', 2, 0, 1, 1, h - interval '10 hours', h - interval '2 hours', h + interval '20 hours');
@@ -42,14 +43,15 @@ begin
     (a, c1, s, 1000), (a, c2, s, 300),  -- A deployed 1 300 but its minimum this hour is 500
     (b, c1, s, 600), (b, c3, s, 200),
     (c, c2, s, 230),
-    (d, c4, s, 100), (e, c4, s, 100);   -- tie on cell 4: the holder (Knaves) keeps it
+    (d, c4, s, 100), (e, c4, s, 100),   -- tie on cell 4: the holder (Knaves) keeps it
+    (c, c5, s, 50);                     -- C guards the Wretches' camp: no point, no Renown
 
   for r in select * from public.score_tick(h) loop
     log := log || format(E'\n  %s: %s', r.faction_id, r.points);
   end loop;
-  log := E'\n1 points per Banner (expect wretches 4 = camp 1 + tower 3, goblins 4 = cell 1 + Tithe 3, knaves 1, others 0):' || log;
+  log := E'\n1 points per Banner (expect wretches 3 = tower 3 + camp 0, goblins 4 = cell 1 + Tithe 3, knaves 1, others 0):' || log;
 
-  log := log || format(E'\n2 Renown B=%s A=%s C=%s E=%s D=%s (expect 4, 1, 2, 1, none)',
+  log := log || format(E'\n2 Renown B=%s A=%s C=%s E=%s D=%s (expect 4, 1, 2, 1, none: C earns nothing on the camp)',
     (select renown from public.player_scores where season_id = s and wallet = b),
     (select renown from public.player_scores where season_id = s and wallet = a),
     (select renown from public.player_scores where season_id = s and wallet = c),
@@ -59,7 +61,7 @@ begin
     coalesce((select owner_faction_id from public.cells where id = c1), 'null'));
 
   perform public.score_tick(h);
-  log := log || format(E'\n4 second call: score rows %s, total points %s, B Renown %s (expect 5, 9, 4)',
+  log := log || format(E'\n4 second call: score rows %s, total points %s, B Renown %s (expect 5, 8, 4)',
     (select count(*) from public.score_ticks where season_id = s),
     (select sum(points) from public.score_ticks where season_id = s),
     (select renown from public.player_scores where season_id = s and wallet = b));

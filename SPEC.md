@@ -44,10 +44,10 @@ Règle d'or de lisibilité : **ce qui est jeu est gravé à la plume, ce qui est
 
 | Bannière (traduction) | Blason | Couleurs de la bannière | Devise | Terre d'origine |
 | --- | --- | --- | --- | --- |
-| The Goblins (les Gobelins) | Une dague tordue entre deux crocs | Vert-de-gris et or sur noir | « All that glitters is ours » | The Gnawing Pits : fosses et galeries qui rongent la terre |
+| The Goblins (les Gobelins) | Une tête de gobelin à couronne de pointes sur deux dagues croisées | Vert-de-gris et or sur noir | « All that glitters is ours » | The Gnawing Pits : fosses et galeries qui rongent la terre |
 | The Changelings (les enfants échangés par les fées) | Un berceau vide sous un croissant de lune | Argent sur vert sylve | « We were never yours » | The Cradle Fen : marais brumeux des fées |
 | The Knaves (les Fripons) | Un masque fendu et une clé | Or sur pourpre | « Nothing belongs to anyone » | Knave's Hollow : ville basse nichée dans un creux |
-| The Unburied (les Sans-Sépulture) | Une pelle de fossoyeur brisée sous une couronne d'os | Os sur noir | « No grave can hold us » | The Weeping Barrows : tumulus qui pleurent |
+| The Unburied (les Sans-Sépulture) | Un crâne couronné sur deux pelles de fossoyeur croisées | Os sur noir | « No grave can hold us » | The Weeping Barrows : tumulus qui pleurent |
 | The Wretches (les Misérables) | Une fourche et une torche croisées | Rouille et encre sur parchemin | « We are the many » | The Burnt Fields : plaines incendiées |
 
 Chaque Bannière a sa personnalité, pour attirer un type de joueur. Les Wretches parlent aux petits holders, les Goblins aux chasseurs de gains rapides, les Changelings aux vétérans patients, les Knaves aux opportunistes, et les Unburied à ceux qui reviennent toujours après un dump. C'est de la saveur, pas des règles différentes : dans le MVP, toutes les Bannières jouent avec les mêmes règles.
@@ -66,8 +66,8 @@ Où on voit les bannières : les 5 suspendues côte à côte sur `/join`, en en-
 
 ### La carte
 
-- **Support** : une carte ancienne sur parchemin vieilli, dessinée à la plume en style gravure : montagnes, forêts, marais et villages dessinés par région.
-- **Cases** : une grille discrète à l'encre pâle de 48 × 30 cases, soit 1 440 cases jouables.
+- **Support** : l'illustration public/map/world@4x.webp (6344 × 3968), en style gravure, avec un continent entouré de mer. Le canvas tient compte du devicePixelRatio pour rester net sur écran Retina.
+- **Cases** : une grille de 48 × 30 cases posée sur l'illustration, visible seulement sur la case survolée. Un masque terre/mer rend la mer et le fleuve injouables ; les ponts sont jouables.
 - **Les 5 terres d'origine** : The Goblins au nord-ouest, The Changelings au sud-ouest, The Unburied au nord-est, The Wretches au sud-est, et The Knaves au centre, sur une île du fleuve. Chaque Bannière y a son camp de base.
 - **Le fleuve** descend du nord au sud et se sépare en deux bras autour de l'île de Knave's Hollow. Chaque bras a 2 ponts, soit 4 ponts en tout, qui deviennent des points stratégiques naturels. L'île n'est accessible que par ces ponts.
 - **Un cartouche orné** dans un coin porte le nom de la saison ; une rose des vents décore le coin opposé.
@@ -76,24 +76,15 @@ Où on voit les bannières : les 5 suspendues côte à côte sur `/join`, en en-
 
 | Situation | Rendu |
 | --- | --- |
-| Case neutre | L'illustration nue |
-| Zone tenue par une Bannière | Style carte ancienne coloriée à la main. Les cases adjacentes d'une Bannière fusionnent en une zone, dont le contour est lissé en courbes et coupé au masque de terre. Frontière : un trait fin en pointillé (~1,5 px) dans une version foncée de la couleur de la Bannière, jamais le long des côtes. Le long de l'intérieur de tout le contour (côtes comprises), une bande d'aquarelle d'environ 12 px aux bords légèrement irréguliers, qui s'estompe vers le centre (mode multiply, opacité max 45 %). Pas de remplissage au centre. Les zones de moins de 3 cases n'ont pas de frontière, seulement un petit fanion. Les écus, petits, ne figurent que sur les grandes zones |
-| Force de la garnison | Petits pions dessinés à la plume, sans chiffre : 1 pion pour une garnison faible, 2 pour moyenne, 3 pour forte (seuils `GARRISON_MEDIUM` et `GARRISON_STRONG` dans `config/game.ts`). Ils s'estompent en vue d'ensemble. Le chiffre exact n'apparaît qu'au survol de la case et dans le panneau de droite |
-| Mes cases | Fin liseré doré |
-| Case disputée (écart de moins de 10 % entre les deux premières Bannières) | Deux petites épées croisées dans le coin de la case |
+| Case neutre | Parchemin nu |
+| Case tenue par une Bannière | Style carte ancienne coloriée à la main : frontière lissée en pointillé fin (1,5 px, version foncée de la couleur), bande d'aquarelle d'environ 12 px le long de l'intérieur qui s'estompe vers le centre, pas de trait le long des côtes, jamais sur l'eau ; petit écu sur les grandes zones, simple fanion pour les zones de moins de 3 cases |
+| Force de la garnison | Petits pions à l'encre sépia (1 à 3 selon la force), visibles seulement en zoom fort et seulement sur les cases occupées ; chiffre exact au survol et dans le panneau de la case |
+| Mes cases | Contour doré |
+| Case disputée (écart de moins de 10 % entre les deux premières Bannières) | Petites épées croisées à l'encre sépia, visibles à partir du zoom moyen |
 | Case bonus | Une tour de guet dessinée |
-| Soldats récemment déplacés (cooldown) | Mes pions redessinés à l'encre bleu-noir brillante, « encore humide », qui sèche en 1 h |
+| Soldats récemment déplacés (cooldown) | Pions à l'encre brillante, « encore humide », qui sèche en 1 h |
 
-Le fond de la carte est l'illustration `public/map/world.png` ; la grille 48 × 30 s'y superpose, très discrète, visible seulement au survol et au zoom. Les cases de mer et de fleuve sont injouables (masque terre/mer). Aucun chiffre n'est affiché en permanence sur la carte. L'encre humide montre le cooldown sans compte à rebours.
-
-### Ornements
-
-Les ornements dorés de `public/ornaments/` restent discrets : la carte et les informations de jeu passent avant.
-
-- **Cadre de la carte** : les 4 coins (`corner_*.png`) posés aux angles, jamais étirés, reliés par un filet doré fin (CSS) qui prolonge exactement leurs pointes.
-- **Panneau « My Army »** : `border_horizontal` en haut du panneau, `divider_wings` comme séparateur entre les sections.
-- **Lettrine enluminée** au début des textes de lore (capitale Cinzel dorée dans un petit cadre vert sombre). Jamais sur les textes d'interface.
-- Les panneaux de chiffres restent sobres et lisibles.
+Les détails s'affichent selon le zoom : en vue d'ensemble, seulement les frontières et les écus ; en zoom moyen, les épées des cases disputées ; en zoom fort, les pions. La carte reste lisible à tous les niveaux. L'encre humide montre le cooldown sans compte à rebours.
 
 ### Palette
 
@@ -105,13 +96,13 @@ Les ornements dorés de `public/ornaments/` restent discrets : la carte et les i
 | Traits de la carte, texte gravé | Encre sépia | #2A1F14 |
 | Filets, ornements, mes cases | Or | #C9A24B |
 | Alertes, cases disputées | Rouge sang | #8E1B1B |
-| The Goblins (sur la carte) | Vert de mousse | #7FA83A |
-| The Changelings | Bleu d'étang | #6FA9C8 |
+| The Goblins (sur la carte) | Vert mousse | #7FA83A |
+| The Changelings | Bleu brume | #6FA9C8 |
 | The Knaves | Lie-de-vin | #7A2E3B |
-| The Unburied | Gris de plomb | #6B6F80 |
-| The Wretches | Rouille de braise | #C4502F |
+| The Unburied | Gris ardoise | #6B6F80 |
+| The Wretches | Rouge brique | #C4502F |
 
-Sur la carte, les couleurs des Bannières sont posées comme sur une carte ancienne coloriée à la main : une bande d'aquarelle le long de l'intérieur des frontières et un fin pointillé foncé, sans lavis plein. Les cinq teintes sont des pigments sourds qui restent distincts sur l'illustration ; le pointillé et l'écu des grandes zones servent de second repère.
+Sur la carte, les couleurs des Bannières s'appliquent en bandes d'aquarelle le long des frontières (opacité max 0,45, jamais de remplissage plein) avec le mode de fusion `multiply`, comme de l'encre sur du papier. Les cinq teintes sont choisies pour rester distinctes, y compris pour les daltoniens les plus courants ; les hachures servent de second repère.
 
 ### Typographies
 
@@ -129,6 +120,10 @@ Sur la carte, les couleurs des Bannières sont posées comme sur une carte ancie
 - **Curseur** : une plume sur la carte, le curseur normal dans l'interface.
 
 Rendu technique : la bibliothèque **rough.js** donne le trait « fait main » aux formes et aux hachures. Elle est seedée par l'identifiant de chaque case pour que le dessin reste identique d'un chargement à l'autre.
+
+### Ornements
+
+Les ornements d'enluminure (or, vert sombre, roses, lunes) sont dans `public/ornaments/`. Les 4 coins (`corner_*.png`) encadrent la carte et sont reliés par un filet doré fin en CSS, sans étirer les images. `border_horizontal.png` décore le haut du panneau « My Army », et `divider_wings.png` sert de séparateur entre les sections. Les ornements restent discrets : la carte et les infos de jeu passent avant.
 
 ### Son (désactivé par défaut)
 
@@ -182,13 +177,13 @@ Un soldat vaut donc ×1 à l'achat et ×2 après 30 jours de détention. L'ancie
 ### 4. Déploiement
 
 - Le joueur répartit sa force entre des cases. Ce qui n'est pas déployé reste en réserve.
-- On peut déployer sur une case neutre ou ennemie seulement si elle touche (par un côté) une case tenue par sa faction. Au début de chaque saison, chaque Bannière reçoit un camp de base de 2 × 2 cases dans sa terre d'origine. Le camp de base est imprenable : il appartient à sa Bannière toute la saison, même sans soldats, et seuls ses membres peuvent y déployer. Une Bannière qui a tout perdu peut donc toujours repartir de son camp.
+- On peut déployer sur une case neutre ou ennemie seulement si elle touche (par un côté) une case tenue par sa faction. Au début de chaque saison, chaque Bannière reçoit un camp de base de 2 × 2 cases dans sa terre d'origine. Ce camp est imprenable : les autres factions ne peuvent pas y déployer, il appartient toujours à sa Bannière et ne rapporte aucun point. Une faction balayée de la carte garde ainsi un point de départ pour revenir.
 - Un joueur peut placer au plus \[20 000\] de force sur une même case. Une baleine doit donc s'étaler, et une armée étalée est plus facile à attaquer.
 - Des soldats déployés ou déplacés sont bloqués \[1 h\] sur leur case (« encre humide ») avant de pouvoir être retirés.
 
 ### 5. Contrôle d'une case et combats
 
-Une case appartient à la faction qui y a la plus grande force totale, en additionnant tous ses membres. En cas d'égalité, la faction qui tenait déjà la case la garde. Exception : les cases d'un camp de base appartiennent toujours à leur Bannière (règle 4). Attaquer revient simplement à déployer plus de force que le défenseur sur une case adjacente. La résolution est immédiate.
+Une case appartient à la faction qui y a la plus grande force totale, en additionnant tous ses membres. En cas d'égalité, la faction qui tenait déjà la case la garde. Attaquer revient simplement à déployer plus de force que le défenseur sur une case adjacente. La résolution est immédiate.
 
 Les soldats d'une faction perdante ne meurent pas. Ils restent sur la case et peuvent la reprendre avec des renforts. Une case peut donc avoir plusieurs factions présentes, mais une seule propriétaire.
 
