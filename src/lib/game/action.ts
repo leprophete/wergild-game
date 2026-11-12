@@ -8,7 +8,7 @@ import { syncWallet } from "@/lib/chain/sync";
 /** Rule refusals raised by game_action(), with the message shown to the player. */
 const REFUSALS: Record<string, string> = {
   not_adjacent: "Your Banner must hold a cell touching this one.",
-  river: "The river cannot be held.",
+  river: "Water cannot be held.",
   impregnable: "This base camp is impregnable.",
   not_enough_reserve: "Not enough soldiers in reserve.",
   not_enough_here: "You do not have that many soldiers here.",

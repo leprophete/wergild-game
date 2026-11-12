@@ -7,6 +7,7 @@ import type { CellState, GameEvent } from "@/lib/map/state";
 import {
   CELL,
   CHARCOAL,
+  WASH_ALPHA,
   WORLD_H,
   WORLD_W,
   buildOverlayIndex,
@@ -17,7 +18,7 @@ import {
   drawBackground,
   drawOverlay,
   drawTerritory,
-  territoryDirty,
+  hoverArea,
   worldToCell,
   type CellAnim,
   type Fonts,
@@ -97,7 +98,7 @@ export default function MapCanvas(props: Props) {
   const hoverRef = useRef<number | null>(null);
   const animsRef = useRef<CellAnim[]>([]);
   const prevCellsRef = useRef<CellState[] | null>(null);
-  const indexRef = useRef<OverlayIndex>({ contested: [], mine: [], fog: null, events: [] });
+  const indexRef = useRef<OverlayIndex>({ contested: [], mine: [], fog: null, events: [], borders: null });
   const propsRef = useRef(props);
   propsRef.current = props;
   const [ready, setReady] = useState(false);
@@ -133,9 +134,11 @@ export default function MapCanvas(props: Props) {
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(bg, 0, 0, WORLD_W, WORLD_H);
     ctx.globalCompositeOperation = "multiply";
+    ctx.globalAlpha = WASH_ALPHA;
     ctx.drawImage(terr, 0, 0, WORLD_W, WORLD_H);
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
-    animsRef.current = drawAnimations(ctx, animsRef.current, t);
+    animsRef.current = drawAnimations(ctx, animsRef.current, t, { canvas: bg, R: resRef.current });
     drawOverlay(ctx, overlayInput(Date.now()), t);
   };
 
@@ -164,12 +167,15 @@ export default function MapCanvas(props: Props) {
       const y = cy(Math.floor(id / GRID_W)) - PAD;
       const w = CELL + PAD * 2;
       ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
       ctx.drawImage(bg, x * R, y * R, w * R, w * R, x, y, w, w);
       ctx.globalCompositeOperation = "multiply";
+      ctx.globalAlpha = WASH_ALPHA;
       ctx.drawImage(terr, x * R, y * R, w * R, w * R, x, y, w, w);
     }
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
-    animsRef.current = drawAnimations(ctx, animsRef.current, t);
+    animsRef.current = drawAnimations(ctx, animsRef.current, t, { canvas: bg, R });
     drawOverlay(ctx, overlayInput(Date.now()), t, touched);
     ctx.restore();
   };
@@ -276,14 +282,23 @@ export default function MapCanvas(props: Props) {
             }),
         ),
       );
-      if (cancelled) return;
+      // the illustration: full size on desktop (3172 px), a 1600 px version on phones
       const mobile = Math.min(window.innerWidth, window.innerHeight) < 700;
-      const R = mobile ? 1.5 : Math.min(2.25, Math.max(1.5, window.devicePixelRatio || 1) * 1.1);
+      const world = await new Promise<HTMLImageElement | null>((res) => {
+        const img = new Image();
+        img.decoding = "async";
+        img.onload = () => res(img);
+        img.onerror = () => res(null);
+        img.src = mobile ? "/map/world-1600.jpg" : "/map/world.jpg";
+      });
+      if (cancelled || !world) return;
+      // cached background resolution ≈ the image's own resolution, never more
+      const R = Math.min(mobile ? 1.3 : 2.06, world.naturalWidth / WORLD_W);
       resRef.current = R;
       const bg = document.createElement("canvas");
       bg.width = Math.round(WORLD_W * R);
       bg.height = Math.round(WORLD_H * R);
-      drawBackground(bg, R, fonts, propsRef.current.seasonTitle, propsRef.current.seasonSub);
+      drawBackground(bg, R, fonts, world, propsRef.current.seasonTitle, propsRef.current.seasonSub);
       const terr = document.createElement("canvas");
       terr.width = bg.width;
       terr.height = bg.height;
@@ -301,13 +316,12 @@ export default function MapCanvas(props: Props) {
     if (!ready || !terrRef.current) return;
     const prev = prevCellsRef.current;
     const t0 = performance.now();
-    if (!prev) {
+    if (!prev || prev !== props.cells) {
+      // one flat colour per held cell: redrawing the whole layer costs ~1 ms
       drawTerritory(terrRef.current, resRef.current, props.cells);
       statsRef.current.territoryCells = props.cells.length;
-    } else if (prev !== props.cells) {
-      const dirty = territoryDirty(prev, props.cells);
-      if (dirty.size) drawTerritory(terrRef.current, resRef.current, props.cells, dirty);
-      statsRef.current.territoryCells = dirty.size;
+    }
+    if (prev && prev !== props.cells) {
       if (!reducedMotion()) {
         animsRef.current = [...animsRef.current, ...diffAnimations(prev, props.cells, performance.now())];
       }
@@ -429,8 +443,8 @@ export default function MapCanvas(props: Props) {
           if (h !== hoverRef.current) {
             const old = hoverRef.current;
             hoverRef.current = h;
-            // hover only touches two cells
-            invalidate([old, h].filter((c): c is number => c !== null));
+            // hover only touches the small grid around the old and the new cell
+            invalidate([...hoverArea(old), ...hoverArea(h)]);
           }
         }
         return;
@@ -463,7 +477,7 @@ export default function MapCanvas(props: Props) {
       if (hoverRef.current !== null) {
         const old = hoverRef.current;
         hoverRef.current = null;
-        invalidate([old]);
+        invalidate(hoverArea(old));
       }
     };
     const wheel = (e: WheelEvent) => {

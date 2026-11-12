@@ -1,3 +1,5 @@
+import { BASE_CAMPS } from "@/lib/map/mask";
+
 export type FactionId = "goblins" | "changelings" | "knaves" | "unburied" | "wretches";
 
 export interface Faction {
@@ -23,7 +25,7 @@ export const FACTIONS: Faction[] = [
     motto: "All that glitters is ours",
     homeland: "The Gnawing Pits",
     color: "#5C8A3A",
-    base: { x: 4, y: 4 },
+    base: BASE_CAMPS.goblins,
     banner: img("banners", "goblins"),
     crest: img("crests", "goblins"),
     homelandImg: img("homelands", "goblins"),
@@ -34,7 +36,7 @@ export const FACTIONS: Faction[] = [
     motto: "We were never yours",
     homeland: "The Cradle Fen",
     color: "#8DB3C7",
-    base: { x: 4, y: 24 },
+    base: BASE_CAMPS.changelings,
     banner: img("banners", "changelings"),
     crest: img("crests", "changelings"),
     homelandImg: img("homelands", "changelings"),
@@ -45,7 +47,7 @@ export const FACTIONS: Faction[] = [
     motto: "Nothing belongs to anyone",
     homeland: "Knave's Hollow",
     color: "#7A2E5C",
-    base: { x: 23, y: 14 },
+    base: BASE_CAMPS.knaves,
     banner: img("banners", "knaves"),
     crest: img("crests", "knaves"),
     homelandImg: img("homelands", "knaves"),
@@ -56,7 +58,7 @@ export const FACTIONS: Faction[] = [
     motto: "No grave can hold us",
     homeland: "The Weeping Barrows",
     color: "#3B3B3B",
-    base: { x: 42, y: 4 },
+    base: BASE_CAMPS.unburied,
     banner: img("banners", "unburied"),
     crest: img("crests", "unburied"),
     homelandImg: img("homelands", "unburied"),
@@ -67,7 +69,7 @@ export const FACTIONS: Faction[] = [
     motto: "We are the many",
     homeland: "The Burnt Fields",
     color: "#B5552B",
-    base: { x: 42, y: 24 },
+    base: BASE_CAMPS.wretches,
     banner: img("banners", "wretches"),
     crest: img("crests", "wretches"),
     homelandImg: img("homelands", "wretches"),

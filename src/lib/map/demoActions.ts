@@ -11,7 +11,7 @@ import { resolveOwner, type CellState } from "./state";
 
 export function deployBlocker(cells: CellState[], id: number, faction: FactionId): string | null {
   const sc = STATIC_CELLS[id];
-  if (sc.kind === "blocked") return "The river cannot be held.";
+  if (sc.kind === "blocked") return "Water cannot be held.";
   if (sc.baseOf && sc.baseOf !== faction) return "This base camp is impregnable.";
   const c = cells[id];
   if (c.owner === faction) return null;

@@ -1,41 +1,28 @@
 import rough from "roughjs";
-import type { Drawable } from "roughjs/bin/core";
-import { COOLDOWN_MINUTES, GRID_H, GRID_W, MAX_FORCE_PER_CELL } from "@config/game";
+import { COOLDOWN_MINUTES, GRID_H, GRID_W } from "@config/game";
 import { FACTIONS, FACTION_BY_ID, type FactionId } from "@/lib/factions";
-import { hash2, mulberry32 } from "@/lib/rng";
-import {
-  BRIDGES,
-  FORK_BOTTOM,
-  FORK_TOP,
-  STATIC_CELLS,
-  WATCHTOWERS,
-  cellId,
-  colLabel,
-  eastArmX,
-  riverXs,
-  rowName,
-  westArmX,
-} from "./layout";
-import { inZone, isContested, totalForce, type CellState, type GameEvent } from "./state";
+import { STATIC_CELLS, cellId, isPlayable } from "./layout";
+import { WATCHTOWER_CELLS } from "./mask";
+import { inZone, isContested, type CellState, type GameEvent } from "./state";
 
 // ---------------------------------------------------------------------------
-// World geometry (world units; the canvas transform does the zoom)
+// World geometry (world units; the canvas transform does the zoom).
+// The map is the illustration public/map/world.png, exactly 48 × 30 cells.
 // ---------------------------------------------------------------------------
 export const CELL = 32;
-export const ML = 56; // left/right margin
-export const MT = 96; // top/bottom margin (cartouche & compass live there)
-export const WORLD_W = GRID_W * CELL + ML * 2;
-export const WORLD_H = GRID_H * CELL + MT * 2;
-export const cx = (x: number) => ML + x * CELL;
-export const cy = (y: number) => MT + y * CELL;
+export const WORLD_W = GRID_W * CELL;
+export const WORLD_H = GRID_H * CELL;
+export const cx = (x: number) => x * CELL;
+export const cy = (y: number) => y * CELL;
 
 export const INK = "#2A1F14";
 export const PARCH = "#E6D8B8";
-export const BURNT = "#C9B48A";
 export const GOLD = "#C9A24B";
 export const BLOOD = "#8E1B1B";
 export const CHARCOAL = "#141210";
-const WATER = "#B4C2B4";
+
+/** Opacity of a Banner's wash over the illustration (multiply). */
+export const WASH_ALPHA = 0.42;
 
 export interface Fonts {
   cinzel: string;
@@ -44,29 +31,18 @@ export interface Fonts {
 }
 
 export function worldToCell(wx: number, wy: number): number | null {
-  const x = Math.floor((wx - ML) / CELL);
-  const y = Math.floor((wy - MT) / CELL);
+  const x = Math.floor(wx / CELL);
+  const y = Math.floor(wy / CELL);
   if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) return null;
   return cellId(x, y);
 }
 
 type Ctx = CanvasRenderingContext2D;
-type Rng = () => number;
+type Rough = ReturnType<typeof rough.canvas>;
 const rgba = (hex: string, a: number) => {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
 };
-
-// ---------------------------------------------------------------------------
-// Pen helpers — slightly wobbly strokes, like a quill
-// ---------------------------------------------------------------------------
-function penLine(ctx: Ctx, rng: Rng, x1: number, y1: number, x2: number, y2: number, wobble = 0.8) {
-  const mx = (x1 + x2) / 2 + (rng() - 0.5) * wobble * 2;
-  const my = (y1 + y2) / 2 + (rng() - 0.5) * wobble * 2;
-  ctx.moveTo(x1, y1);
-  ctx.quadraticCurveTo(mx, my, x2, y2);
-}
-
 function ink(ctx: Ctx, width = 0.9, alpha = 0.85) {
   ctx.strokeStyle = rgba(INK, alpha);
   ctx.lineWidth = width;
@@ -74,452 +50,32 @@ function ink(ctx: Ctx, width = 0.9, alpha = 0.85) {
   ctx.lineJoin = "round";
 }
 
-function mountain(ctx: Ctx, rng: Rng, x: number, by: number, w: number, h: number) {
-  const px = x + w * (0.45 + rng() * 0.1);
-  ctx.beginPath();
-  ink(ctx, 1);
-  ctx.moveTo(x, by);
-  ctx.lineTo(px - w * 0.08, by - h * 0.85);
-  ctx.lineTo(px, by - h);
-  ctx.lineTo(px + w * 0.12, by - h * 0.8);
-  ctx.lineTo(x + w, by);
-  ctx.fillStyle = PARCH;
-  ctx.fill();
-  ctx.stroke();
-  // engraved shading on the lee side
-  ctx.beginPath();
-  ink(ctx, 0.6, 0.6);
-  for (let i = 1; i < 6; i++) {
-    const t = i / 6;
-    const sx = px + (x + w - px) * t * 0.9;
-    const sy = by - h + h * t;
-    penLine(ctx, rng, sx - 1, sy, sx - 4 + t * 2, by - 1, 0.4);
-  }
-  ctx.stroke();
-}
-
-function tree(ctx: Ctx, rng: Rng, x: number, by: number, r: number) {
-  ctx.beginPath();
-  ink(ctx, 0.8);
-  penLine(ctx, rng, x, by, x, by - r * 1.2, 0.2);
-  ctx.stroke();
-  ctx.beginPath();
-  const n = 9;
-  for (let i = 0; i <= n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    const rr = r * (0.85 + rng() * 0.3);
-    const px = x + Math.cos(a) * rr;
-    const py = by - r * 1.6 + Math.sin(a) * rr * 0.95;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
-  ctx.fillStyle = PARCH;
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ink(ctx, 0.5, 0.55);
-  for (let i = 0; i < 3; i++) {
-    const yy = by - r * 1.6 - r * 0.3 + i * r * 0.4;
-    penLine(ctx, rng, x + r * 0.15, yy, x + r * 0.75, yy + r * 0.25, 0.3);
-  }
-  ctx.stroke();
-}
-
-function house(ctx: Ctx, rng: Rng, x: number, by: number, s: number) {
-  ctx.beginPath();
-  ink(ctx, 0.8);
-  ctx.rect(x - s / 2, by - s * 0.7, s, s * 0.7);
-  ctx.fillStyle = PARCH;
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(x - s * 0.62, by - s * 0.68);
-  ctx.lineTo(x, by - s * 1.25);
-  ctx.lineTo(x + s * 0.62, by - s * 0.68);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ink(ctx, 0.5, 0.6);
-  for (let i = 1; i < 4; i++) penLine(ctx, rng, x + i * s * 0.12, by - s * 1.2 + i * s * 0.12, x + s * 0.55, by - s * 0.7, 0.2);
-  ctx.moveTo(x - s * 0.1, by);
-  ctx.lineTo(x - s * 0.1, by - s * 0.3);
-  ctx.lineTo(x + s * 0.1, by - s * 0.3);
-  ctx.lineTo(x + s * 0.1, by);
-  ctx.stroke();
-}
-
-function tuft(ctx: Ctx, rng: Rng, x: number, y: number, s = 3) {
-  ctx.beginPath();
-  ink(ctx, 0.55, 0.5);
-  penLine(ctx, rng, x - s, y, x - s * 0.5, y - s * 1.2, 0.3);
-  penLine(ctx, rng, x, y, x, y - s * 1.6, 0.3);
-  penLine(ctx, rng, x + s, y, x + s * 0.5, y - s * 1.2, 0.3);
-  ctx.stroke();
-}
-
-// --- homeland motifs -------------------------------------------------------
-function pit(ctx: Ctx, rng: Rng, x: number, y: number, r: number) {
-  ctx.beginPath();
-  ink(ctx, 0.9);
-  ctx.ellipse(x, y, r, r * 0.55, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.save();
-  ctx.beginPath();
-  ctx.ellipse(x, y, r, r * 0.55, 0, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.beginPath();
-  ink(ctx, 0.55, 0.7);
-  for (let i = -r; i < r; i += 2) penLine(ctx, rng, x + i, y - r, x + i + r * 0.6, y + r, 0.3);
-  ctx.stroke();
-  ctx.restore();
-  // pit-prop timbers
-  ctx.beginPath();
-  ink(ctx, 0.9);
-  ctx.moveTo(x - r * 0.4, y + r * 0.1);
-  ctx.lineTo(x - r * 0.4, y - r * 0.75);
-  ctx.lineTo(x + r * 0.4, y - r * 0.75);
-  ctx.lineTo(x + r * 0.4, y + r * 0.1);
-  ctx.stroke();
-}
-
-function reeds(ctx: Ctx, rng: Rng, x: number, y: number) {
-  ctx.beginPath();
-  ink(ctx, 0.55, 0.65);
-  for (let i = 0; i < 4; i++) {
-    const rx = x + (rng() - 0.5) * 8;
-    penLine(ctx, rng, rx, y, rx + (rng() - 0.5) * 3, y - 5 - rng() * 5, 0.5);
-  }
-  for (let i = 0; i < 2; i++) {
-    const wy = y + 3 + i * 2.5;
-    penLine(ctx, rng, x - 7, wy, x + 7, wy, 1);
-  }
-  ctx.stroke();
-}
-
-function barrow(ctx: Ctx, rng: Rng, x: number, by: number, w: number) {
-  ctx.beginPath();
-  ink(ctx, 0.9);
-  ctx.moveTo(x - w / 2, by);
-  ctx.quadraticCurveTo(x, by - w * 0.75, x + w / 2, by);
-  ctx.fillStyle = PARCH;
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ink(ctx, 0.5, 0.6);
-  for (let i = 0; i < 4; i++) {
-    const t = 0.15 + i * 0.18;
-    penLine(ctx, rng, x + w * (t - 0.05), by - w * 0.3 + i, x + w * t, by - 1, 0.2);
-  }
-  ctx.stroke();
-  // standing stone + weeping drops
-  ctx.beginPath();
-  ink(ctx, 0.8);
-  ctx.rect(x - 1.5, by - w * 0.55, 3, 6);
-  ctx.stroke();
-  ctx.fillStyle = rgba(INK, 0.55);
-  for (let i = 0; i < 3; i++) {
-    ctx.beginPath();
-    ctx.arc(x - w * 0.25 + i * w * 0.25, by + 3 + rng() * 2, 0.7, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-function burntField(ctx: Ctx, rng: Rng, x: number, y: number) {
-  ctx.beginPath();
-  ink(ctx, 0.55, 0.55);
-  for (let i = 0; i < 5; i++) penLine(ctx, rng, x + 2, y + 6 + i * 5, x + CELL - 2, y + 2 + i * 5, 0.8);
-  ctx.stroke();
-  if (rng() < 0.45) {
-    // a small flame and its smoke
-    const fx = x + 8 + rng() * 16;
-    const fy = y + 22;
-    ctx.beginPath();
-    ink(ctx, 0.8);
-    ctx.moveTo(fx - 3, fy);
-    ctx.quadraticCurveTo(fx - 4, fy - 5, fx, fy - 9);
-    ctx.quadraticCurveTo(fx + 4, fy - 5, fx + 3, fy);
-    ctx.closePath();
-    ctx.fillStyle = rgba(INK, 0.15);
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ink(ctx, 0.5, 0.45);
-    ctx.moveTo(fx, fy - 10);
-    ctx.bezierCurveTo(fx + 5, fy - 13, fx - 4, fy - 16, fx + 2, fy - 20);
-    ctx.stroke();
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Static background: parchment, terrain, river, bridges, towers, frame, decor
+// Background (cached canvas, drawn once): the illustration, the place names in
+// IM Fell English, the watchtowers, the season cartouche and the compass rose.
 // ---------------------------------------------------------------------------
-export function drawBackground(canvas: HTMLCanvasElement, R: number, fonts: Fonts, seasonTitle: string, seasonSub: string) {
+export function drawBackground(
+  canvas: HTMLCanvasElement,
+  R: number,
+  fonts: Fonts,
+  world: HTMLImageElement,
+  seasonTitle: string,
+  seasonSub: string,
+) {
   const ctx = canvas.getContext("2d")!;
   ctx.setTransform(R, 0, 0, R, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(world, 0, 0, WORLD_W, WORLD_H);
   const rc = rough.canvas(canvas);
-  const rng = mulberry32(1337);
-
-  // the page behind the sheet
-  ctx.fillStyle = CHARCOAL;
-  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
-
-  // sheet with a slightly ragged edge
-  ctx.beginPath();
-  const edge: [number, number][] = [];
-  const step = 24;
-  for (let x = 4; x <= WORLD_W - 4; x += step) edge.push([x, 4 + rng() * 4]);
-  for (let y = 4; y <= WORLD_H - 4; y += step) edge.push([WORLD_W - 4 - rng() * 4, y]);
-  for (let x = WORLD_W - 4; x >= 4; x -= step) edge.push([x, WORLD_H - 4 - rng() * 4]);
-  for (let y = WORLD_H - 4; y >= 4; y -= step) edge.push([4 + rng() * 4, y]);
-  edge.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-  ctx.closePath();
-  ctx.fillStyle = PARCH;
-  ctx.fill();
-  ctx.save();
-  ctx.clip();
-
-  // aged edges
-  const g = ctx.createRadialGradient(WORLD_W / 2, WORLD_H / 2, WORLD_H * 0.35, WORLD_W / 2, WORLD_H / 2, WORLD_W * 0.62);
-  g.addColorStop(0, rgba(BURNT, 0));
-  g.addColorStop(0.7, rgba(BURNT, 0.55));
-  g.addColorStop(1, rgba("#8a6f45", 0.9));
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
-  // stains
-  for (let i = 0; i < 18; i++) {
-    const sx = rng() * WORLD_W;
-    const sy = rng() * WORLD_H;
-    const sr = 30 + rng() * 120;
-    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
-    sg.addColorStop(0, rgba(BURNT, 0.28));
-    sg.addColorStop(0.8, rgba(BURNT, 0.12));
-    sg.addColorStop(1, rgba(BURNT, 0));
-    ctx.fillStyle = sg;
-    ctx.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
-  }
-  // fibres and specks
-  for (let i = 0; i < 2600; i++) {
-    ctx.fillStyle = rgba(INK, 0.03 + rng() * 0.08);
-    ctx.fillRect(rng() * WORLD_W, rng() * WORLD_H, 0.6 + rng(), 0.6 + rng());
-  }
-  ctx.beginPath();
-  ink(ctx, 0.4, 0.05);
-  for (let i = 0; i < 400; i++) {
-    const fx = rng() * WORLD_W;
-    const fy = rng() * WORLD_H;
-    penLine(ctx, rng, fx, fy, fx + (rng() - 0.5) * 14, fy + (rng() - 0.5) * 6, 1);
-  }
-  ctx.stroke();
-
-  // --- terrain per cell ----------------------------------------------------
-  for (const sc of STATIC_CELLS) {
-    const r = mulberry32(hash2(sc.x, sc.y, 3));
-    const x = cx(sc.x);
-    const y = cy(sc.y);
-    if (sc.kind === "blocked" || sc.kind === "bridge" || sc.kind === "bonus" || sc.baseOf) continue;
-    switch (sc.region) {
-      case "goblins":
-        if (r() < 0.55) pit(ctx, r, x + 10 + r() * 12, y + 14 + r() * 6, 6 + r() * 4);
-        else tuft(ctx, r, x + 16, y + 24);
-        if (r() < 0.25) mountain(ctx, r, x + 2, y + 30, 16, 12);
-        continue;
-      case "changelings":
-        reeds(ctx, r, x + 8 + r() * 6, y + 16);
-        if (r() < 0.6) reeds(ctx, r, x + 20 + r() * 6, y + 26);
-        if (r() < 0.3) tree(ctx, r, x + 24, y + 18, 4);
-        continue;
-      case "knaves":
-        if (r() < 0.7) {
-          house(ctx, r, x + 10, y + 16, 9);
-          if (r() < 0.7) house(ctx, r, x + 22, y + 26, 8);
-        } else tuft(ctx, r, x + 16, y + 22);
-        continue;
-      case "unburied":
-        if (r() < 0.6) barrow(ctx, r, x + 16, y + 24, 18 + r() * 8);
-        else tuft(ctx, r, x + 14, y + 20);
-        continue;
-      case "wretches":
-        burntField(ctx, r, x, y);
-        continue;
-    }
-    switch (sc.terrain) {
-      case "mountain":
-        mountain(ctx, r, x - 2, y + 30, 22, 18 + r() * 6);
-        if (r() < 0.5) mountain(ctx, r, x + 14, y + 31, 18, 12);
-        break;
-      case "forest":
-        tree(ctx, r, x + 9, y + 15, 5);
-        tree(ctx, r, x + 22, y + 13, 5);
-        tree(ctx, r, x + 15, y + 28, 5.5);
-        break;
-      case "village":
-        house(ctx, r, x + 11, y + 18, 9);
-        house(ctx, r, x + 22, y + 26, 8);
-        break;
-      default:
-        if (r() < 0.3) tuft(ctx, r, x + 6 + r() * 20, y + 10 + r() * 18);
-        if (r() < 0.12) tree(ctx, r, x + 8 + r() * 16, y + 22, 4);
-    }
-  }
-
-  // Changeling mist
-  {
-    const f = FACTION_BY_ID.changelings;
-    for (let i = 0; i < 7; i++) {
-      const mx = cx(f.base.x + 1 + (rng() - 0.5) * 10);
-      const my = cy(f.base.y + 1 + (rng() - 0.5) * 8);
-      const mr = 40 + rng() * 50;
-      const mg = ctx.createRadialGradient(mx, my, 0, mx, my, mr);
-      mg.addColorStop(0, "rgba(250,246,236,0.45)");
-      mg.addColorStop(1, "rgba(250,246,236,0)");
-      ctx.fillStyle = mg;
-      ctx.fillRect(mx - mr, my - mr, mr * 2, mr * 2);
-    }
-  }
-  // Knave's Hollow embankment (the "hollow")
-  {
-    ctx.beginPath();
-    ink(ctx, 0.6, 0.5);
-    const r2 = mulberry32(55);
-    for (let y = FORK_TOP + 1; y <= FORK_BOTTOM - 1; y++) {
-      const wx = cx(westArmX(y) + 1) + 3;
-      const ex = cx(eastArmX(y)) - 3;
-      for (let k = 0; k < 3; k++) {
-        const yy = cy(y) + k * 10 + 4;
-        penLine(ctx, r2, wx, yy, wx + 4, yy + 3, 0.3);
-        penLine(ctx, r2, ex, yy, ex - 4, yy + 3, 0.3);
-      }
-    }
-    ctx.stroke();
-  }
-
-  drawRiver(ctx, rng);
-  drawBridges(ctx, rc);
   drawTowers(ctx, rc);
-  drawBaseCamps(ctx, rc);
-
-  // grid — pale ink
-  ctx.beginPath();
-  ctx.strokeStyle = rgba(INK, 0.13);
-  ctx.lineWidth = 0.6;
-  for (let x = 0; x <= GRID_W; x++) {
-    ctx.moveTo(cx(x), MT);
-    ctx.lineTo(cx(x), MT + GRID_H * CELL);
-  }
-  for (let y = 0; y <= GRID_H; y++) {
-    ctx.moveTo(ML, cy(y));
-    ctx.lineTo(ML + GRID_W * CELL, cy(y));
-  }
-  ctx.stroke();
-
-  drawFrame(ctx, fonts);
-  drawLabels(ctx, fonts);
+  drawPlaceNames(ctx, fonts);
   drawCartouche(ctx, rc, fonts, seasonTitle, seasonSub);
   drawCompass(ctx, fonts);
-  drawScaleBar(ctx, fonts);
-  ctx.restore();
-}
-
-function riverPath(ctx: Ctx, pts: [number, number][]) {
-  ctx.beginPath();
-  ctx.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < pts.length - 1; i++) {
-    const mx = (pts[i][0] + pts[i + 1][0]) / 2;
-    const my = (pts[i][1] + pts[i + 1][1]) / 2;
-    ctx.quadraticCurveTo(pts[i][0], pts[i][1], mx, my);
-  }
-  const last = pts[pts.length - 1];
-  ctx.lineTo(last[0], last[1]);
-}
-
-function drawRiver(ctx: Ctx, rng: Rng) {
-  const center = (y: number) => {
-    const xs = riverXs(y);
-    return [cx(xs[0]) + CELL, cy(y) + CELL / 2] as [number, number];
-  };
-  const north: [number, number][] = [[center(0)[0], 6]];
-  for (let y = 0; y < FORK_TOP; y++) north.push(center(y));
-  const south: [number, number][] = [];
-  for (let y = FORK_BOTTOM + 1; y < GRID_H; y++) south.push(center(y));
-  south.push([south[south.length - 1][0], WORLD_H - 6]);
-  const arm = (xf: (y: number) => number) => {
-    const p: [number, number][] = [north[north.length - 1]];
-    for (let y = FORK_TOP; y <= FORK_BOTTOM; y++) p.push([cx(xf(y)) + CELL / 2, cy(y) + CELL / 2]);
-    p.push(south[0]);
-    return p;
-  };
-  const west = arm(westArmX);
-  const east = arm(eastArmX);
-
-  const strokes: [[number, number][], number][] = [
-    [north, CELL * 2 - 8],
-    [south, CELL * 2 - 8],
-    [west, CELL - 6],
-    [east, CELL - 6],
-  ];
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  for (const [p, w] of strokes) {
-    riverPath(ctx, p);
-    ctx.strokeStyle = rgba(INK, 0.9);
-    ctx.lineWidth = w + 3;
-    ctx.stroke();
-  }
-  for (const [p, w] of strokes) {
-    riverPath(ctx, p);
-    ctx.strokeStyle = WATER;
-    ctx.lineWidth = w;
-    ctx.stroke();
-  }
-  // waterlines parallel to the banks
-  for (const [p, w] of strokes) {
-    riverPath(ctx, p);
-    ctx.strokeStyle = rgba("#f3eedf", 0.35);
-    ctx.lineWidth = w * 0.45;
-    ctx.stroke();
-  }
-  // ripples
-  ctx.beginPath();
-  ink(ctx, 0.6, 0.35);
-  for (const sc of STATIC_CELLS) {
-    if (sc.kind !== "blocked") continue;
-    for (let k = 0; k < 2; k++) {
-      const x = cx(sc.x) + 8 + rng() * 12;
-      const y = cy(sc.y) + 8 + rng() * 16;
-      ctx.moveTo(x, y);
-      ctx.bezierCurveTo(x + 2, y - 2, x + 4, y + 2, x + 6, y);
-      ctx.bezierCurveTo(x + 8, y - 2, x + 10, y + 2, x + 12, y);
-    }
-  }
-  ctx.stroke();
-}
-
-type Rough = ReturnType<typeof rough.canvas>;
-
-function drawBridges(ctx: Ctx, rc: Rough) {
-  for (const [bx, by] of BRIDGES) {
-    const x = cx(bx) - 5;
-    const y = cy(by) + 8;
-    const w = CELL + 10;
-    const h = CELL - 16;
-    const seed = cellId(bx, by) + 1;
-    rc.rectangle(x, y, w, h, { seed, stroke: INK, strokeWidth: 1.1, fill: PARCH, fillStyle: "solid", roughness: 0.9 });
-    ctx.beginPath();
-    ink(ctx, 0.6, 0.7);
-    for (let px = x + 4; px < x + w - 2; px += 4) {
-      ctx.moveTo(px, y + 1);
-      ctx.lineTo(px, y + h - 1);
-    }
-    ctx.stroke();
-    rc.line(x - 3, y - 2, x + w + 3, y - 2, { seed: seed + 1, stroke: INK, strokeWidth: 1.2, roughness: 0.8 });
-    rc.line(x - 3, y + h + 2, x + w + 3, y + h + 2, { seed: seed + 2, stroke: INK, strokeWidth: 1.2, roughness: 0.8 });
-  }
 }
 
 function drawTowers(ctx: Ctx, rc: Rough) {
-  for (const [tx, ty] of WATCHTOWERS) {
+  for (const [tx, ty] of WATCHTOWER_CELLS) {
     const seed = cellId(tx, ty) + 1;
     const x = cx(tx) + CELL / 2;
     const by = cy(ty) + CELL - 4;
@@ -530,7 +86,7 @@ function drawTowers(ctx: Ctx, rc: Rough) {
         [x + 5, by - 16],
         [x + 7, by],
       ],
-      { seed, stroke: INK, strokeWidth: 1, fill: PARCH, fillStyle: "solid", roughness: 0.7 },
+      { seed, stroke: INK, strokeWidth: 1.1, fill: PARCH, fillStyle: "solid", roughness: 0.7 },
     );
     rc.polygon(
       [
@@ -547,7 +103,7 @@ function drawTowers(ctx: Ctx, rc: Rough) {
         [x + 7, by - 21],
         [x + 7, by - 16],
       ],
-      { seed: seed + 1, stroke: INK, strokeWidth: 0.9, fill: PARCH, fillStyle: "solid", roughness: 0.5 },
+      { seed: seed + 1, stroke: INK, strokeWidth: 1, fill: PARCH, fillStyle: "solid", roughness: 0.5 },
     );
     ctx.beginPath();
     ink(ctx, 0.6, 0.7);
@@ -568,116 +124,59 @@ function drawTowers(ctx: Ctx, rc: Rough) {
   }
 }
 
-function drawBaseCamps(ctx: Ctx, rc: Rough) {
-  for (const f of FACTIONS) {
-    const x = cx(f.base.x);
-    const y = cy(f.base.y);
-    const s = CELL * 2;
-    const seed = cellId(f.base.x, f.base.y) + 1;
-    rc.rectangle(x + 3, y + 3, s - 6, s - 6, { seed, stroke: INK, strokeWidth: 1.3, roughness: 1.1 });
-    rc.rectangle(x + 6, y + 6, s - 12, s - 12, { seed: seed + 7, stroke: INK, strokeWidth: 0.7, roughness: 1.1 });
-    // palisade stakes
-    ctx.beginPath();
-    ink(ctx, 0.7, 0.8);
-    for (let i = 6; i < s - 4; i += 5) {
-      ctx.moveTo(x + i, y + 3);
-      ctx.lineTo(x + i, y);
-      ctx.moveTo(x + i, y + s - 3);
-      ctx.lineTo(x + i, y + s);
-      ctx.moveTo(x + 3, y + i);
-      ctx.lineTo(x, y + i);
-      ctx.moveTo(x + s - 3, y + i);
-      ctx.lineTo(x + s, y + i);
-    }
-    ctx.stroke();
-  }
-}
-
-function drawFrame(ctx: Ctx, fonts: Fonts) {
-  const x0 = ML;
-  const y0 = MT;
-  const w = GRID_W * CELL;
-  const h = GRID_H * CELL;
-  ink(ctx, 1.6, 0.9);
-  ctx.strokeRect(x0 - 6, y0 - 6, w + 12, h + 12);
-  ink(ctx, 0.7, 0.9);
-  ctx.strokeRect(x0 - 2, y0 - 2, w + 4, h + 4);
-  // corner diamonds
-  ctx.fillStyle = INK;
-  for (const [px, py] of [
-    [x0 - 6, y0 - 6],
-    [x0 + w + 6, y0 - 6],
-    [x0 - 6, y0 + h + 6],
-    [x0 + w + 6, y0 + h + 6],
-  ]) {
-    ctx.beginPath();
-    ctx.moveTo(px, py - 5);
-    ctx.lineTo(px + 5, py);
-    ctx.lineTo(px, py + 5);
-    ctx.lineTo(px - 5, py);
-    ctx.closePath();
-    ctx.fill();
-  }
-  // coordinates
-  ctx.fillStyle = rgba(INK, 0.75);
-  ctx.font = `9px ${fonts.fell}`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  for (let x = 0; x < GRID_W; x++) {
-    ctx.fillText(colLabel(x), cx(x) + CELL / 2, y0 - 14);
-    ctx.fillText(colLabel(x), cx(x) + CELL / 2, y0 + h + 14);
-  }
-  for (let y = 0; y < GRID_H; y++) {
-    ctx.fillText(rowName(y), x0 - 18, cy(y) + CELL / 2);
-    ctx.fillText(rowName(y), x0 + w + 18, cy(y) + CELL / 2);
-  }
-}
-
-function label(ctx: Ctx, text: string, x: number, y: number, size: number, font: string, rot = 0) {
+/** Lettering written straight onto the map, with a thin parchment halo so it stays legible. */
+function letter(ctx: Ctx, text: string, x: number, y: number, size: number, font: string, opts: { rot?: number; italic?: boolean; spacing?: number } = {}) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate(rot);
-  ctx.font = `italic ${size}px ${font}`;
+  ctx.rotate(opts.rot ?? 0);
+  ctx.font = `${opts.italic === false ? "" : "italic "}${size}px ${font}`;
+  if ("letterSpacing" in ctx) (ctx as Ctx & { letterSpacing: string }).letterSpacing = `${opts.spacing ?? 0.5}px`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = rgba(PARCH, 0.8);
+  ctx.lineJoin = "round";
+  ctx.lineWidth = size * 0.28;
+  ctx.strokeStyle = "rgba(236,222,190,0.78)";
   ctx.strokeText(text, 0, 0);
-  ctx.fillStyle = rgba(INK, 0.9);
+  ctx.fillStyle = rgba(INK, 0.92);
   ctx.fillText(text, 0, 0);
   ctx.restore();
 }
 
-function drawLabels(ctx: Ctx, fonts: Fonts) {
-  const f = fonts.fell;
-  label(ctx, "The Gnawing Pits", cx(5), cy(8.6), 15, f);
-  label(ctx, "The Cradle Fen", cx(5), cy(22.4), 15, f);
-  label(ctx, "The Weeping Barrows", cx(43), cy(8.6), 15, f);
-  label(ctx, "The Burnt Fields", cx(43), cy(22.4), 15, f);
-  label(ctx, "Knave's Hollow", cx(24), cy(12.5), 14, f);
-  const n = riverXs(2);
-  label(ctx, "River Wend", cx(n[0]) + CELL, cy(2.5), 12, f, -Math.PI / 2);
-  label(ctx, "the Weir", cx(westArmX(15)) + CELL / 2, cy(15), 10, f, -Math.PI / 2);
-  label(ctx, "the Mourning Reach", cx(eastArmX(15)) + CELL / 2, cy(15), 10, f, Math.PI / 2);
-  label(ctx, "Ashen March", cx(13), cy(14.5), 12, f);
-  label(ctx, "Crowfeeder Wood", cx(35), cy(14.5), 12, f);
+/** Place names (world cells), set where the illustration draws each place. */
+export const PLACE_NAMES: { text: string; x: number; y: number; size: number; rot?: number }[] = [
+  { text: "The Gnawing Pits", x: 15.6, y: 9.4, size: 19 },
+  { text: "The Weeping Barrows", x: 38.2, y: 8.4, size: 19 },
+  { text: "The Cradle Fen", x: 9.6, y: 21.6, size: 19 },
+  { text: "The Burnt Fields", x: 37.6, y: 24.2, size: 19 },
+  { text: "Knave's Hollow", x: 24.6, y: 17.35, size: 16 },
+  { text: "River Wend", x: 25.6, y: 5.6, size: 14, rot: -Math.PI / 2.35 },
+  { text: "the Weir", x: 17.4, y: 14.8, size: 12, rot: -Math.PI / 2 },
+  { text: "the Mourning Reach", x: 30.5, y: 14.6, size: 12, rot: Math.PI / 2 },
+  { text: "Ashen March", x: 8.2, y: 12.4, size: 15 },
+  { text: "Crowfeeder Moor", x: 40.6, y: 13.6, size: 15 },
+  { text: "The Grey Deep", x: 40.5, y: 0.75, size: 17 },
+  { text: "Sorrow Sound", x: 16.5, y: 28.8, size: 15 },
+];
+
+function drawPlaceNames(ctx: Ctx, fonts: Fonts) {
+  for (const p of PLACE_NAMES) letter(ctx, p.text, cx(p.x), cy(p.y), p.size, fonts.fell, { rot: p.rot });
 }
 
 function drawCartouche(ctx: Ctx, rc: Rough, fonts: Fonts, title: string, sub: string) {
-  const x = 22;
-  const y = 12;
-  const w = 360;
-  const h = 72;
+  // bottom-left, over the open sea
+  const x = 14;
+  const y = WORLD_H - 74;
+  const w = 268;
+  const h = 58;
   rc.rectangle(x, y, w, h, { seed: 9001, stroke: INK, strokeWidth: 1.4, fill: "#efe4c8", fillStyle: "solid", roughness: 0.8 });
-  rc.rectangle(x + 5, y + 5, w - 10, h - 10, { seed: 9002, stroke: INK, strokeWidth: 0.6, roughness: 0.8 });
-  // scroll curls
+  rc.rectangle(x + 4, y + 4, w - 8, h - 8, { seed: 9002, stroke: INK, strokeWidth: 0.6, roughness: 0.8 });
   for (const side of [-1, 1]) {
     const sx = side < 0 ? x : x + w;
     ctx.beginPath();
     ink(ctx, 1.1, 0.9);
     for (let a = 0; a < Math.PI * 3.2; a += 0.15) {
-      const r = 2 + a * 1.6;
-      const px = sx + side * (Math.cos(a) * r - 4);
+      const r = 1.5 + a * 1.3;
+      const px = sx + side * (Math.cos(a) * r - 3);
       const py = y + h / 2 + Math.sin(a) * r;
       if (a === 0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
@@ -687,43 +186,28 @@ function drawCartouche(ctx: Ctx, rc: Rough, fonts: Fonts, title: string, sub: st
   ctx.fillStyle = INK;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = `600 22px ${fonts.cinzel}`;
-  ctx.fillText(title.toUpperCase(), x + w / 2, y + 30);
-  ctx.font = `italic 13px ${fonts.fell}`;
+  ctx.font = `600 17px ${fonts.cinzel}`;
+  ctx.fillText(title.toUpperCase(), x + w / 2, y + 23);
+  ctx.font = `italic 11px ${fonts.fell}`;
   ctx.fillStyle = rgba(INK, 0.85);
-  ctx.fillText(sub, x + w / 2, y + 53);
-  // flourishes
-  ctx.beginPath();
-  ink(ctx, 0.8, 0.8);
-  ctx.moveTo(x + 60, y + 44);
-  ctx.quadraticCurveTo(x + w / 2, y + 38, x + w - 60, y + 44);
-  ctx.stroke();
-
-  // slogan, opposite corner of the top margin
-  ctx.textAlign = "right";
-  ctx.font = `italic 15px ${fonts.fell}`;
-  ctx.fillStyle = rgba(INK, 0.8);
-  ctx.fillText("Every token has a price in blood.", WORLD_W - 30, 54);
+  ctx.fillText(sub, x + w / 2, y + 42);
 }
 
 function drawCompass(ctx: Ctx, fonts: Fonts) {
-  const x = WORLD_W - 110;
-  const y = WORLD_H - 46;
-  const r = 34;
+  // bottom-right, over the open sea
+  const x = WORLD_W - 52;
+  const y = WORLD_H - 50;
+  const r = 28;
+  ctx.fillStyle = "rgba(236,222,190,0.55)";
+  ctx.beginPath();
+  ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+  ctx.fill();
   ink(ctx, 0.8, 0.9);
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.stroke();
   ctx.beginPath();
   ctx.arc(x, y, r - 4, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ink(ctx, 0.4, 0.6);
-  for (let i = 0; i < 32; i++) {
-    const a = (i / 32) * Math.PI * 2;
-    ctx.moveTo(x + Math.cos(a) * (r - 4), y + Math.sin(a) * (r - 4));
-    ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
-  }
   ctx.stroke();
   const point = (a: number, len: number, wid: number) => {
     const tip = [x + Math.cos(a) * len, y + Math.sin(a) * len];
@@ -746,152 +230,105 @@ function drawCompass(ctx: Ctx, fonts: Fonts) {
     ink(ctx, 0.7, 1);
     ctx.stroke();
   };
-  for (let i = 0; i < 4; i++) point(Math.PI / 4 + (i * Math.PI) / 2, r * 0.6, 4);
-  for (let i = 0; i < 4; i++) point(-Math.PI / 2 + (i * Math.PI) / 2, r + 8, 6);
-  ctx.fillStyle = INK;
-  ctx.font = `600 12px ${fonts.cinzel}`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("N", x, y - r - 14);
-}
-
-function drawScaleBar(ctx: Ctx, fonts: Fonts) {
-  const x = 40;
-  const y = WORLD_H - 44;
-  for (let i = 0; i < 5; i++) {
-    ctx.fillStyle = i % 2 ? PARCH : INK;
-    ctx.fillRect(x + i * CELL, y, CELL, 5);
-  }
-  ink(ctx, 0.7, 1);
-  ctx.strokeRect(x, y, CELL * 5, 5);
-  ctx.fillStyle = INK;
-  ctx.font = `italic 11px ${fonts.fell}`;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText("Leagues", x, y - 6);
-  ctx.textAlign = "center";
-  ctx.font = `9px ${fonts.fell}`;
-  for (let i = 0; i <= 5; i++) ctx.fillText(String(i * 10), x + i * CELL, y + 16);
+  for (let i = 0; i < 4; i++) point(Math.PI / 4 + (i * Math.PI) / 2, r * 0.6, 3.5);
+  for (let i = 0; i < 4; i++) point(-Math.PI / 2 + (i * Math.PI) / 2, r + 6, 5);
+  letter(ctx, "N", x, y - r - 11, 12, fonts.cinzel, { italic: false });
 }
 
 // ---------------------------------------------------------------------------
-// Territory layer: wash (50 % ink on paper) + engraved hatching by garrison strength.
-// Composited onto the background with "multiply" (white = no change).
-//
-// Performance: rough.js shapes are generated ONCE per (cell, strength step) and cached;
-// after the first full paint, only the cells whose look changed (and their neighbours,
-// for the shared borders) are repainted.
+// Territory layer (cached canvas): one flat colour per held cell, transparent
+// elsewhere. Composited ONCE as a whole at WASH_ALPHA with "multiply", so a zone
+// reads as a single transparent wash with no seams between its cells.
 // ---------------------------------------------------------------------------
-const STRENGTH_STEPS = 16;
-
-export function strengthOf(total: number) {
-  if (total <= 0) return 0;
-  return Math.min(1, Math.sqrt(total / (MAX_FORCE_PER_CELL * 0.75)));
-}
-const stepOf = (c: CellState) => (c.owner ? Math.round(strengthOf(totalForce(c)) * STRENGTH_STEPS) : 0);
-
-const roughGen = rough.generator();
-const hatchCache = new Map<number, Drawable | null>();
-function hatchFor(id: number, step: number): Drawable | null {
-  const key = id * 32 + step;
-  let d = hatchCache.get(key);
-  if (d !== undefined) return d;
-  const s = step / STRENGTH_STEPS;
-  d =
-    s < 0.1
-      ? null
-      : roughGen.rectangle(cx(id % GRID_W) + 2, cy(Math.floor(id / GRID_W)) + 2, CELL - 4, CELL - 4, {
-          seed: id + 1,
-          stroke: "none",
-          fill: rgba(INK, 0.22 + s * 0.32),
-          fillStyle: s > 0.55 ? "cross-hatch" : "hachure",
-          hachureGap: 13 - s * 9.5,
-          hachureAngle: -41,
-          fillWeight: 0.45 + s * 0.4,
-          roughness: 1.1,
-        });
-  hatchCache.set(key, d);
-  return d;
-}
-
-/** Each Banner colour mixed 50 % with white: the wash, as one flat fill. */
-const washOf = (f: FactionId) => {
-  const n = parseInt(FACTION_BY_ID[f].color.slice(1), 16);
-  const mix = (v: number) => Math.round((v + 255) / 2);
-  return `rgb(${mix(n >> 16)},${mix((n >> 8) & 255)},${mix(n & 255)})`;
-};
-const WASH = Object.fromEntries(FACTIONS.map((f) => [f.id, washOf(f.id)])) as Record<FactionId, string>;
-
-function paintCell(ctx: Ctx, rc: Rough, cells: CellState[], id: number) {
-  const c = cells[id];
-  const gx = id % GRID_W;
-  const gy = Math.floor(id / GRID_W);
-  const x = cx(gx);
-  const y = cy(gy);
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x, y, CELL, CELL);
-  ctx.clip();
-  ctx.globalCompositeOperation = "source-over";
-  ctx.fillStyle = c.owner ? WASH[c.owner] : "#fff";
-  ctx.fillRect(x, y, CELL, CELL);
-  ctx.globalCompositeOperation = "multiply";
-  const h = c.owner ? hatchFor(id, stepOf(c)) : null;
-  if (h) rc.draw(h);
-  // borders between Banners: each side draws its half of the shared edge
-  const edge = (n: CellState | undefined, x1: number, y1: number, x2: number, y2: number) => {
-    const o = n?.owner ?? null;
-    if (!n || o === c.owner || (!o && !c.owner)) return;
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-  };
-  ctx.beginPath();
-  ctx.strokeStyle = rgba(INK, 0.7);
-  ctx.lineWidth = 1.3;
-  if (gx > 0) edge(cells[id - 1], x, y, x, y + CELL);
-  if (gx < GRID_W - 1) edge(cells[id + 1], x + CELL, y, x + CELL, y + CELL);
-  if (gy > 0) edge(cells[id - GRID_W], x, y, x + CELL, y);
-  if (gy < GRID_H - 1) edge(cells[id + GRID_W], x, y + CELL, x + CELL, y + CELL);
-  ctx.stroke();
-  ctx.restore();
-}
-
-/** Paints the territory layer — every cell, or only `only`. */
-export function drawTerritory(canvas: HTMLCanvasElement, R: number, cells: CellState[], only?: Iterable<number>) {
+export function drawTerritory(canvas: HTMLCanvasElement, R: number, cells: CellState[]) {
   const ctx = canvas.getContext("2d")!;
-  const rc = rough.canvas(canvas);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(R, 0, 0, R, 0, 0);
-  if (!only) {
-    ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
-    for (let id = 0; id < cells.length; id++) paintCell(ctx, rc, cells, id);
-  } else {
-    for (const id of only) paintCell(ctx, rc, cells, id);
+  for (const c of cells) {
+    const sc = STATIC_CELLS[c.id];
+    if (!c.owner || sc.terrain === "water") continue;
+    ctx.fillStyle = FACTION_BY_ID[c.owner].color;
+    // a hair of overlap avoids hairline gaps when the layer is scaled
+    ctx.fillRect(cx(sc.x) - 0.3, cy(sc.y) - 0.3, CELL + 0.6, CELL + 0.6);
   }
-  ctx.globalCompositeOperation = "source-over";
 }
 
-/** Cells whose territory look changed, plus their side neighbours (shared borders). */
-export function territoryDirty(prev: CellState[], next: CellState[]): Set<number> {
-  const dirty = new Set<number>();
-  for (let i = 0; i < next.length; i++) {
-    const a = prev[i];
-    const b = next[i];
-    if (a && a.owner === b.owner && stepOf(a) === stepOf(b)) continue;
-    dirty.add(i);
-    const x = i % GRID_W;
-    if (x > 0) dirty.add(i - 1);
-    if (x < GRID_W - 1) dirty.add(i + 1);
-    if (i >= GRID_W) dirty.add(i - GRID_W);
-    if (i + GRID_W < next.length) dirty.add(i + GRID_W);
+/**
+ * One ink frontier around each held zone: an edge is drawn only where the two sides
+ * do not belong to the same Banner (coast and map edge included) — adjacent cells of a
+ * Banner merge into a single contour.
+ */
+export function buildBorderPath(cells: CellState[]): Path2D {
+  const path = new Path2D();
+  const owner = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H || !isPlayable(x, y)) return null;
+    return cells[cellId(x, y)]?.owner ?? null;
+  };
+  for (let y = 0; y <= GRID_H; y++) {
+    for (let x = 0; x <= GRID_W; x++) {
+      const here = owner(x, y);
+      // vertical edge on the left of (x, y)
+      if (y < GRID_H) {
+        const left = owner(x - 1, y);
+        if (here !== left && (here || left)) {
+          path.moveTo(cx(x), cy(y));
+          path.lineTo(cx(x), cy(y + 1));
+        }
+      }
+      // horizontal edge above (x, y)
+      if (x < GRID_W) {
+        const up = owner(x, y - 1);
+        if (here !== up && (here || up)) {
+          path.moveTo(cx(x), cy(y));
+          path.lineTo(cx(x + 1), cy(y));
+        }
+      }
+    }
   }
-  return dirty;
+  return path;
+}
+
+/** Every edge of the playable cells: the discreet grid. */
+let gridPath: Path2D | null = null;
+function playableGrid(): Path2D {
+  if (gridPath) return gridPath;
+  gridPath = new Path2D();
+  for (let y = 0; y <= GRID_H; y++) {
+    for (let x = 0; x <= GRID_W; x++) {
+      const here = isPlayable(x, y);
+      if (y < GRID_H && (here || isPlayable(x - 1, y))) {
+        gridPath.moveTo(cx(x), cy(y));
+        gridPath.lineTo(cx(x), cy(y + 1));
+      }
+      if (x < GRID_W && (here || isPlayable(x, y - 1))) {
+        gridPath.moveTo(cx(x), cy(y));
+        gridPath.lineTo(cx(x + 1), cy(y));
+      }
+    }
+  }
+  return gridPath;
+}
+
+/** Grid alpha by zoom: hidden at overview, fades in from ~24 to ~48 px per cell. */
+export const gridAlphaAt = (cellPx: number) => Math.max(0, Math.min(1, (cellPx - 24) / 24)) * 0.32;
+
+/** Cells around `id` lit by the hover grid (radius in cells). */
+export const HOVER_RADIUS = 2;
+export function hoverArea(id: number | null): number[] {
+  if (id === null) return [];
+  const x0 = id % GRID_W;
+  const y0 = Math.floor(id / GRID_W);
+  const out: number[] = [];
+  for (let y = y0 - HOVER_RADIUS - 1; y <= y0 + HOVER_RADIUS + 1; y++)
+    for (let x = x0 - HOVER_RADIUS - 1; x <= x0 + HOVER_RADIUS + 1; x++)
+      if (x >= 0 && y >= 0 && x < GRID_W && y < GRID_H) out.push(cellId(x, y));
+  return out;
 }
 
 // ---------------------------------------------------------------------------
-// Overlay: filters, my cells, contested pulse, events, wet ink, crests, selection.
-// The per-cell lists are computed once per data change (buildOverlayIndex), never per frame.
+// Overlay: filters, frontiers, my cells, contested pulse, events, wet ink, crests,
+// grid, hover and selection. Lists are built once per data change, never per frame.
 // ---------------------------------------------------------------------------
 export type MapFilter = "all" | "mine" | "contested" | "events";
 
@@ -901,6 +338,7 @@ export interface OverlayIndex {
   /** cells dimmed by the active filter (null = no filter) */
   fog: number[] | null;
   events: GameEvent[];
+  borders: Path2D | null;
 }
 
 export function buildOverlayIndex(cells: CellState[], events: GameEvent[], filter: MapFilter, now: number): OverlayIndex {
@@ -908,6 +346,7 @@ export function buildOverlayIndex(cells: CellState[], events: GameEvent[], filte
   const contested: number[] = [];
   const mine: number[] = [];
   for (const c of cells) {
+    if (STATIC_CELLS[c.id]?.terrain === "water") continue;
     if (isContested(c)) contested.push(c.id);
     if (c.mine > 0) mine.push(c.id);
   }
@@ -919,9 +358,9 @@ export function buildOverlayIndex(cells: CellState[], events: GameEvent[], filte
         : filter === "contested"
           ? new Set(contested)
           : new Set(cells.filter((c) => active.some((e) => inZone(c.id % GRID_W, Math.floor(c.id / GRID_W), e.zone))).map((c) => c.id));
-    fog = cells.filter((c) => !keep.has(c.id)).map((c) => c.id);
+    fog = cells.filter((c) => !keep.has(c.id) && STATIC_CELLS[c.id].terrain !== "water").map((c) => c.id);
   }
-  return { contested, mine, fog, events: active };
+  return { contested, mine, fog, events: active, borders: cells.length ? buildBorderPath(cells) : null };
 }
 
 export interface OverlayInput {
@@ -948,12 +387,32 @@ export const pulseAt = (t: number) => 0.45 + 0.55 * (0.5 + 0.5 * Math.sin((t / 1
 export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<number>) {
   const { cells, index, now, fonts } = o;
   const px = 1 / o.scale; // one screen pixel in world units
+  const cellPx = CELL * o.scale;
   const pick = (ids: number[]) => (only ? ids.filter((i) => only.has(i)) : ids);
   const pulse = pulseAt(t);
+
+  // the grid: only when zoomed in (hover adds its own local grid below)
+  const gAlpha = gridAlphaAt(cellPx);
+  if (gAlpha > 0) {
+    ctx.strokeStyle = rgba(INK, gAlpha);
+    ctx.lineWidth = Math.max(0.5, 0.8 * px);
+    ctx.stroke(playableGrid());
+  }
 
   if (index.fog) {
     ctx.fillStyle = "rgba(20,18,16,0.5)";
     for (const id of pick(index.fog)) ctx.fillRect(cx(id % GRID_W), cy(Math.floor(id / GRID_W)), CELL, CELL);
+  }
+
+  // one dotted ink frontier around each zone
+  if (index.borders) {
+    ctx.save();
+    ctx.setLineDash([4, 3]);
+    ctx.lineCap = "butt";
+    ctx.lineWidth = Math.max(1.4, 1.3 * px);
+    ctx.strokeStyle = rgba(INK, 0.85);
+    ctx.stroke(index.borders);
+    ctx.restore();
   }
 
   for (const f of FACTIONS) {
@@ -1027,7 +486,6 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
   }
 
   // wet ink: my numbers, glossy while fresh, drying over the cooldown
-  const cellPx = CELL * o.scale;
   if (cellPx >= 18 && mine.length) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -1066,10 +524,25 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
     }
   }
 
-  if (o.hoverId !== null && o.hoverId !== o.selectedId && (!only || only.has(o.hoverId))) {
-    ctx.strokeStyle = rgba(INK, 0.6);
-    ctx.lineWidth = Math.max(1, px);
-    ctx.strokeRect(cx(o.hoverId % GRID_W) + 0.5, cy(Math.floor(o.hoverId / GRID_W)) + 0.5, CELL - 1, CELL - 1);
+  // hover: a small local grid fading around the cursor, and the cell itself
+  if (o.hoverId !== null && (!only || only.has(o.hoverId))) {
+    const hx = o.hoverId % GRID_W;
+    const hy = Math.floor(o.hoverId / GRID_W);
+    ctx.lineWidth = Math.max(0.6, 0.9 * px);
+    for (let y = hy - HOVER_RADIUS; y <= hy + HOVER_RADIUS; y++) {
+      for (let x = hx - HOVER_RADIUS; x <= hx + HOVER_RADIUS; x++) {
+        if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H || !isPlayable(x, y)) continue;
+        const d = Math.hypot(x - hx, y - hy);
+        if (d > HOVER_RADIUS + 0.5) continue;
+        ctx.strokeStyle = rgba(INK, 0.38 * (1 - d / (HOVER_RADIUS + 1)));
+        ctx.strokeRect(cx(x) + 0.5, cy(y) + 0.5, CELL - 1, CELL - 1);
+      }
+    }
+    if (o.hoverId !== o.selectedId) {
+      ctx.strokeStyle = rgba(INK, 0.8);
+      ctx.lineWidth = Math.max(1.2, 1.2 * px);
+      ctx.strokeRect(cx(hx) + 0.5, cy(hy) + 0.5, CELL - 1, CELL - 1);
+    }
   }
   if (o.selectedId !== null && (!only || only.has(o.selectedId))) {
     const x = cx(o.selectedId % GRID_W);
@@ -1099,8 +572,8 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
 }
 
 // ---------------------------------------------------------------------------
-// Animations (SPEC "Animations"): drawn on top of the final state for ~1 s.
-//   deploy   — small pawns drawn with the quill (~400 ms), then the wash spreads from the centre
+// Animations (SPEC "Animations"), drawn over the final state, only on their cells:
+//   deploy   — pawns drawn with the quill (~400 ms), then the wash spreads from the centre
 //   conquest — the old colour burns away from the edges, then the new one spreads
 //   retreat  — the soldiers are struck through with a pen stroke and the wash fades
 // ---------------------------------------------------------------------------
@@ -1114,15 +587,17 @@ export interface CellAnim {
 }
 export const ANIM_MS: Record<AnimKind, number> = { deploy: 1200, conquest: 1600, retreat: 1000 };
 
+const total = (c: CellState) => Object.values(c.forces).reduce((s, v) => s + (v ?? 0), 0);
+
 /** Compares two snapshots and returns the animations to play. */
 export function diffAnimations(prev: CellState[], next: CellState[], now: number): CellAnim[] {
   const out: CellAnim[] = [];
   for (let i = 0; i < next.length; i++) {
     const a = prev[i];
     const b = next[i];
-    if (!a || !b) continue;
-    const ta = totalForce(a);
-    const tb = totalForce(b);
+    if (!a || !b || STATIC_CELLS[i].terrain === "water") continue;
+    const ta = total(a);
+    const tb = total(b);
     if (a.owner !== b.owner && a.owner && b.owner) out.push({ cell: i, kind: "conquest", from: a.owner, to: b.owner, start: now });
     else if (tb > ta) out.push({ cell: i, kind: "deploy", from: a.owner, to: b.owner, start: now });
     else if (tb < ta) out.push({ cell: i, kind: "retreat", from: a.owner, to: b.owner, start: now });
@@ -1158,19 +633,25 @@ function pawns(ctx: Ctx, cx0: number, cy0: number, reveal: number) {
   ctx.restore();
 }
 
-/** Parchment over the cell, except a growing hole: the wash below seems to spread from the centre. */
-function spread(ctx: Ctx, x: number, y: number, t: number) {
+export interface Backdrop {
+  canvas: HTMLCanvasElement;
+  R: number;
+}
+
+/** Repaints the bare illustration over the cell except a growing disc: the wash seems to spread. */
+function spread(ctx: Ctx, bd: Backdrop, x: number, y: number, t: number) {
   const r = ease(t) * CELL * 0.75;
   ctx.save();
   ctx.beginPath();
   ctx.rect(x, y, CELL, CELL);
   ctx.arc(x + CELL / 2, y + CELL / 2, Math.max(0.1, r), 0, Math.PI * 2, true);
-  ctx.fillStyle = rgba(PARCH, 0.92 * (1 - ease(t) * 0.3));
-  ctx.fill("evenodd");
+  ctx.clip("evenodd");
+  ctx.globalAlpha = 1 - ease(t) * 0.25;
+  ctx.drawImage(bd.canvas, x * bd.R, y * bd.R, CELL * bd.R, CELL * bd.R, x, y, CELL, CELL);
   ctx.restore();
 }
 
-export function drawAnimations(ctx: Ctx, anims: CellAnim[], now: number): CellAnim[] {
+export function drawAnimations(ctx: Ctx, anims: CellAnim[], now: number, bd: Backdrop): CellAnim[] {
   const alive: CellAnim[] = [];
   for (const a of anims) {
     const dt = now - a.start;
@@ -1183,19 +664,17 @@ export function drawAnimations(ctx: Ctx, anims: CellAnim[], now: number): CellAn
     const my = y + CELL / 2;
 
     if (a.kind === "deploy") {
-      const draw = dt / 400;
-      if (!a.from && a.to) spread(ctx, x, y, (dt - 400) / 800);
+      if (!a.from && a.to) spread(ctx, bd, x, y, (dt - 400) / 800);
       ctx.globalAlpha = dt < 900 ? 1 : 1 - (dt - 900) / 300;
-      pawns(ctx, mx, my, Math.min(1, draw));
+      pawns(ctx, mx, my, Math.min(1, dt / 400));
       ctx.globalAlpha = 1;
     } else if (a.kind === "conquest") {
       const burn = dt / 700; // phase 1: the old colour burns from the edges inward
       if (burn < 1 && a.from) {
         const inset = ease(burn) * (CELL / 2);
-        ctx.fillStyle = rgba(PARCH, 0.95);
-        ctx.fillRect(x, y, CELL, CELL);
+        ctx.drawImage(bd.canvas, x * bd.R, y * bd.R, CELL * bd.R, CELL * bd.R, x, y, CELL, CELL);
         ctx.globalCompositeOperation = "multiply";
-        ctx.fillStyle = rgba(FACTION_BY_ID[a.from].color, 0.5);
+        ctx.fillStyle = rgba(FACTION_BY_ID[a.from].color, WASH_ALPHA);
         ctx.fillRect(x + inset, y + inset, CELL - inset * 2, CELL - inset * 2);
         ctx.globalCompositeOperation = "source-over";
         ctx.strokeStyle = `rgba(120,40,10,${0.85 * (1 - burn)})`;
@@ -1205,14 +684,14 @@ export function drawAnimations(ctx: Ctx, anims: CellAnim[], now: number): CellAn
         ctx.lineWidth = 1;
         ctx.strokeRect(x + inset + 1.2, y + inset + 1.2, CELL - inset * 2 - 2.4, CELL - inset * 2 - 2.4);
       } else {
-        spread(ctx, x, y, (dt - 700) / 900); // phase 2: the new colour spreads
+        spread(ctx, bd, x, y, (dt - 700) / 900); // phase 2: the new colour spreads
       }
     } else {
       // retreat: soldiers struck through, the wash fades
       const t = dt / dur;
       if (a.from && !a.to) {
         ctx.globalCompositeOperation = "multiply";
-        ctx.fillStyle = rgba(FACTION_BY_ID[a.from].color, 0.5 * (1 - ease(t)));
+        ctx.fillStyle = rgba(FACTION_BY_ID[a.from].color, WASH_ALPHA * (1 - ease(t)));
         ctx.fillRect(x, y, CELL, CELL);
         ctx.globalCompositeOperation = "source-over";
       }

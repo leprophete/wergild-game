@@ -28,9 +28,8 @@ function dijkstra(sources: number[], seed: number): number[] {
   const land = (x: number, y: number) =>
     x >= 0 && y >= 0 && x < GRID_W && y < GRID_H && STATIC_CELLS[cellId(x, y)].kind !== "blocked";
   const cost = (x: number, y: number) => {
-    const t = STATIC_CELLS[cellId(x, y)].terrain;
     const wave = 0.5 + 0.5 * Math.sin(x * 0.55 + seed * 1.7) * Math.cos(y * 0.47 + seed * 0.9);
-    return 1 + wave * 1.1 + (t === "mountain" ? 0.8 : t === "forest" ? 0.3 : 0);
+    return 1 + wave * 1.1;
   };
   for (const s of sources) dist[s] = 0;
   for (;;) {

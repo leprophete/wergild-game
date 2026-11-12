@@ -137,7 +137,7 @@ export function CellPanel({
   if (sc.baseOf) tags.push(`Base camp of ${FACTION_BY_ID[sc.baseOf].name}`);
   if (sc.kind === "bonus") tags.push("Watchtower · 3 pts/h");
   if (sc.kind === "bridge") tags.push("Bridge");
-  if (sc.kind === "blocked") tags.push("River · impassable");
+  if (sc.kind === "blocked") tags.push("Sea or river · impassable");
   if (sc.region && !sc.baseOf) tags.push(FACTION_BY_ID[sc.region].homeland);
 
   return (
