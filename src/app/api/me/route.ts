@@ -6,6 +6,7 @@ import { currentAgeDays, forceOf, soldiersFromBalance, veteranMultiplier } from 
 import type { FactionId } from "@/lib/factions";
 import type { MeResponse } from "@/lib/game/types";
 import { syncWallet } from "@/lib/chain/sync";
+import { roman } from "@/lib/roman";
 
 /** Re-read the chain at most this often on page loads (webhooks and the 10-min job do the rest). */
 const STALE_MS = 60_000;
@@ -56,6 +57,17 @@ export async function GET() {
     renown = Number(score?.renown ?? 0);
   }
 
+  // permanent badges: top 10 Renown of past seasons (rule 8)
+  const { data: badgeRows } = await sb
+    .from("badges")
+    .select("rank, seasons!inner(number)")
+    .eq("wallet", wallet)
+    .order("season_id", { ascending: false });
+  const badges = (badgeRows ?? []).map((b) => {
+    const n = (b.seasons as unknown as { number: number }).number;
+    return `Season ${roman(n)} · #${b.rank} Renown`;
+  });
+
   const ageDays = currentAgeDays(Number(p.age_days), Date.parse(p.age_updated_at));
   const soldiers = soldiersFromBalance(String(p.balance));
   const force = forceOf(soldiers, ageDays);
@@ -76,7 +88,7 @@ export async function GET() {
     deployments,
     cellsHeld,
     renown,
-    badges: [],
+    badges,
   };
   return NextResponse.json(me, { headers: { "Cache-Control": "no-store" } });
 }

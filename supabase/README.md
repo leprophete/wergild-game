@@ -77,3 +77,20 @@ base camps on the illustrated landmarks. To change it:
   1 pt per cell, 3 per watchtower, ×3 in the Tithe, shares Renown pro rata. Idempotent.
 - Test: [`tests/score_rules.sql`](tests/score_rules.sql) — rolled back.
 - API: `GET /api/ranking`; page `/ranking`; Banner points also in `/api/map` (top banners, side panel).
+
+## Seasons, events, Chronicles (step 7)
+
+- `season_tick()` — pg_cron job `wergild-season`, **every minute**:
+  - a Plague whose hour has come strikes (`apply_plague`: zone neutral, its soldiers back to reserve);
+  - at `ends_at` the knell rings (`end_season`): last hour scored, winner = most points over the season
+    (tie → most cells held, then name), archive in `season_archives`, top 10 in `badges`, every soldier
+    back to reserve (seniority kept, Banner change allowed again), next season created on a fresh map,
+    named after the winner, starting at the old `ends_at` (Monday 17:00 UTC);
+  - a planned season whose hour has come opens.
+- The Tithe is read by `score_tick` (×3), the Rush by `game_action` (no wet ink).
+- Admin (`/admin`, wallets listed in `ADMIN_WALLETS`): `admin_create_season`, `admin_rename_season`,
+  `end_season(…, p_early => true)`, `admin_schedule_event` (≥ 6 h ahead, on the hour; Tithe 1/day,
+  Plague 1/season, Rush 1/week), `admin_cancel_event`, `admin_set_excluded`.
+- Test: [`tests/season_rules.sql`](tests/season_rules.sql) — 17 checks, rolled back.
+- Pages: `/archive`, `/archive/[season]`; API `GET /api/archive`, `/api/archive/[season]`, `POST /api/admin/*`.
+- Replay the end-of-season animation on the map: `/map?knell`.

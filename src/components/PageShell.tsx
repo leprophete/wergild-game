@@ -10,7 +10,7 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
         <Link href="/map" className="font-display text-lg font-bold tracking-[0.12em] text-gold md:text-xl">
           $WERGILD
         </Link>
-        <nav className="hidden gap-4 text-sm text-parchment/70 sm:flex">
+        <nav className="hidden gap-3 whitespace-nowrap text-[13px] text-parchment/70 sm:flex lg:gap-5 lg:text-sm">
           <Link href="/map" className="hover:text-parchment">
             The Map
           </Link>
@@ -20,11 +20,14 @@ export default function PageShell({ children }: { children: React.ReactNode }) {
           <Link href="/ranking" className="hover:text-parchment">
             The Ranking
           </Link>
+          <Link href="/archive" className="hover:text-parchment">
+            The Chronicles
+          </Link>
           <Link href="/me" className="hover:text-parchment">
             My Shield
           </Link>
         </nav>
-        <ConnectButton className="ml-auto" />
+        <ConnectButton className="ml-auto shrink-0 whitespace-nowrap" />
       </header>
       <main className="mx-auto max-w-6xl px-4 pb-16 pt-8 md:px-6">{children}</main>
     </div>

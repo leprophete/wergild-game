@@ -1,5 +1,6 @@
 "use client";
 
+import { roman } from "@/lib/roman";
 import Link from "next/link";
 import { FACTIONS, type FactionId } from "@/lib/factions";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
@@ -21,8 +22,6 @@ function formatRemaining(ms: number) {
   return `${d}d ${p(h)}:${p(m)}:${p(s)}`;
 }
 
-const roman = (n: number) =>
-  n === 0 ? "0" : (["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"][n] ?? String(n));
 
 export function TopBar({
   seasonNumber,

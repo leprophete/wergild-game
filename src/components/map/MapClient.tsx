@@ -1,5 +1,6 @@
 "use client";
 
+import { roman } from "@/lib/roman";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FACTION_BY_ID, type FactionId } from "@/lib/factions";
@@ -17,9 +18,9 @@ import { CellPanel, ChooseBannerCard, HomelandCard, MyArmy, SpectatorCard, TheWa
 import { useSession } from "@/components/wallet/SessionProvider";
 import { ActivityFeed } from "./ActivityFeed";
 import { MapFilters } from "./MapFilters";
+import { KnellOverlay, useKnell } from "./KnellOverlay";
 import { MapFrame, PanelCrown } from "@/components/Ornaments";
 
-const roman = (n: number) => (n === 0 ? "0" : (["", "I", "II", "III", "IV", "V"][n] ?? String(n)));
 
 interface World {
   mode: "live" | "demo";
@@ -82,6 +83,7 @@ function useWorld() {
 export default function MapClient() {
   const router = useRouter();
   const { world, setWorld, status } = useWorld();
+  const { knell, close: closeKnell } = useKnell(world?.mode === "live" ? world.season.number : null);
   const session = useSession();
   const [selected, setSelected] = useState<number | null>(null);
   const [filter, setFilter] = useState<MapFilter>("all");
@@ -308,6 +310,7 @@ export default function MapClient() {
           </div>
         </div>
       </div>
+      {knell && <KnellOverlay season={knell} onClose={closeKnell} />}
     </div>
   );
 }
