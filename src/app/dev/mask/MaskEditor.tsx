@@ -97,10 +97,10 @@ export default function MaskEditor() {
 
   return (
     <div className="min-h-dvh bg-charcoal p-4 text-parchment">
-      <h1 className="font-display text-lg tracking-[0.2em] text-gold">LAND / WATER MASK — PROPOSAL</h1>
+      <h1 className="font-display text-lg tracking-[0.2em] text-gold">LAND / WATER MASK</h1>
       <p className="mt-1 text-sm text-parchment/70">
-        Blue = sea or river (not playable) · orange = bridge (playable) · clear = land · coloured squares = proposed
-        base camps · red dots = proposed watchtowers. Click a cell to cycle land → water →
+        Blue = sea or river (not playable) · orange = bridge (playable) · clear = land · coloured squares = base
+        camps · red dots = watchtowers. Click a cell to cycle land → water →
         bridge. Playable: <span className="font-mono">{(counts["."] ?? 0) + (counts["="] ?? 0)}</span> cells, water:{" "}
         <span className="font-mono">{counts["~"] ?? 0}</span>.
       </p>

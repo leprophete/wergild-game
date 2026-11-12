@@ -57,3 +57,14 @@ update public.cells set owner_faction_id = base_faction_id, contested = false;
   (lifted during The Rush), owner recomputed with the tie going to the holder.
 - Test: [`tests/game_rules.sql`](tests/game_rules.sql) — 18 checks, rolled back.
 - API: `POST /api/deploy`, `/api/withdraw`, `/api/move`. Deploy and move re-read the on-chain balance first.
+
+## The map geography (land / water mask)
+
+The playable cells come from `src/lib/map/mask.ts`, built over `public/map/world.png`
+(validated 12 Nov 2026): 977 playable cells, 463 sea/river cells, 4 bridges, 8 watchtowers,
+base camps on the illustrated landmarks. To change it:
+
+1. edit it visually at `/dev/mask` (dev server only) and paste the result into `mask.ts`;
+2. `npm run seed:gen -- remap` → `supabase/apply_world_mask.sql`;
+3. run that file in the SQL editor: soldiers that end up on water (or on another Banner's camp)
+   go back to reserve, cells and camps are rewritten, every owner is recomputed.

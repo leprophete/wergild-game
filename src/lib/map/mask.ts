@@ -11,7 +11,8 @@ import type { FactionId } from "@/lib/factions";
  * homeland (islets) is treated as sea. Without the bridges the land splits in three:
  * the west (Goblins, Changelings), the east (Unburied, Wretches) and Knave's Hollow.
  *
- * STATUS: PROPOSAL — review it at /dev/mask. The database is updated only once validated.
+ * STATUS: VALIDATED (12 Nov 2026) and applied to Season 0. To change it later: edit it at /dev/mask,
+ * paste it here, then `npm run seed:gen -- remap` and run supabase/apply_world_mask.sql.
  */
 export const WORLD_MASK: string[] = [
   "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~", // 0
@@ -46,7 +47,7 @@ export const WORLD_MASK: string[] = [
   "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~", // 29
 ];
 
-/** Proposed 2×2 base camps (top-left cell), on the landmarks the image draws. */
+/** 2×2 base camps (top-left cell), on the landmarks the image draws. */
 export const BASE_CAMPS: Record<FactionId, { x: number; y: number }> = {
   goblins: { x: 14, y: 6 }, // the mine entrances
   changelings: { x: 10, y: 17 }, // the stilt village in the fen
@@ -55,7 +56,7 @@ export const BASE_CAMPS: Record<FactionId, { x: number; y: number }> = {
   wretches: { x: 36, y: 19 }, // the burning windmill
 };
 
-/** Proposed watchtowers (bonus cells, 3 points an hour): two per side of the river, two on the island. */
+/** Watchtowers (bonus cells, 3 points an hour): two per side of the river, two on the island. */
 export const WATCHTOWER_CELLS: [number, number][] = [
   [13, 8],
   [34, 8],
