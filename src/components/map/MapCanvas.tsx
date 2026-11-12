@@ -102,7 +102,7 @@ export default function MapCanvas(props: Props) {
   const hoverRef = useRef<number | null>(null);
   const animsRef = useRef<CellAnim[]>([]);
   const prevCellsRef = useRef<CellState[] | null>(null);
-  const indexRef = useRef<OverlayIndex>({ contested: [], mine: [], fog: null, events: [] })
+  const indexRef = useRef<OverlayIndex>({ contested: [], mine: [], veil: null, matches: null, events: [] })
   const geoRef = useRef<TerritoryGeometry>({ key: "", zones: [] });
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -139,7 +139,10 @@ export default function MapCanvas(props: Props) {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(bg, 0, 0, WORLD_W, WORLD_H);
+    // watercolour bands: multiply, like pigment on paper
+    ctx.globalCompositeOperation = "multiply";
     ctx.drawImage(terr, 0, 0, WORLD_W, WORLD_H);
+    ctx.globalCompositeOperation = "source-over";
     animsRef.current = drawAnimations(ctx, animsRef.current, t);
     drawOverlay(ctx, overlayInput(Date.now()), t);
   };
@@ -169,7 +172,9 @@ export default function MapCanvas(props: Props) {
       const y = cy(Math.floor(id / GRID_W)) - PAD;
       const w = CELL + PAD * 2;
       ctx.drawImage(bg, x * R, y * R, w * R, w * R, x, y, w, w);
+      ctx.globalCompositeOperation = "multiply";
       ctx.drawImage(terr, x * R, y * R, w * R, w * R, x, y, w, w);
+      ctx.globalCompositeOperation = "source-over";
     }
     animsRef.current = drawAnimations(ctx, animsRef.current, t);
     drawOverlay(ctx, overlayInput(Date.now()), t, touched);
@@ -316,7 +321,7 @@ export default function MapCanvas(props: Props) {
     const key = ownersKey(props.cells);
     if (key !== geoRef.current.key) {
       geoRef.current = buildTerritoryGeometry(props.cells);
-      drawTerritory(terrRef.current, resRef.current, geoRef.current, crestsRef.current);
+      drawTerritory(terrRef.current, resRef.current, geoRef.current);
       statsRef.current.territoryCells = geoRef.current.zones.length;
       statsRef.current.geometryBuilds = (statsRef.current.geometryBuilds ?? 0) + 1;
     }

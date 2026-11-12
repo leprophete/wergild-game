@@ -234,26 +234,35 @@ function drawCompass(ctx: Ctx, fonts: Fonts) {
 }
 
 // ---------------------------------------------------------------------------
-// Territories: FRONTIERS, not fills. Each zone (adjacent cells of one Banner) gets a
-// smoothed contour cut to the land mask — dark ink ~4 px under the Banner's bright
-// colour ~2.5 px — and an inner gradient from 35 % on the frontier to nothing within
-// ~1.5 cells. No fill in the middle; one crest at the zone's centre.
-// The geometry and the gradient are computed ONCE per change of owners (cached canvas);
-// only the two strokes are drawn at render time, so they stay ~4 / ~2.5 screen px.
+// Territories, in the style of an old hand-coloured map (SPEC.md):
+//  - a watercolour band ~12 px wide along the INSIDE of the whole contour (coasts
+//    included), with slightly irregular edges, fading towards the centre — multiply,
+//    45 % at most; no fill in the middle;
+//  - a thin dotted frontier (~1.5 px) in a dark shade of the Banner's colour, never
+//    along the coasts;
+//  - zones under 3 cells: no frontier, only a small pennant;
+//  - small crests on the large zones only.
+// The geometry and the watercolour layer are built ONCE per change of owners; the dotted
+// line and the markers are drawn live so they keep their screen size.
 // ---------------------------------------------------------------------------
-export const FRONTIER_INK_PX = 4;
-export const FRONTIER_COLOUR_PX = 2.5;
-const GRADIENT_START_ALPHA = 0.35;
-const GRADIENT_DEPTH = 1.5 * CELL;
-const GRADIENT_STEPS = 10;
+export const FRONTIER_PX = 1.5;
+const BAND_WIDTH = 18; // world units ≈ 12 screen px at the overview zoom
+const BAND_MAX_ALPHA = 0.45;
+const BAND_STEPS = 7;
+const BAND_JITTER = 3.2; // world units: the irregular inner edge
+export const MIN_ZONE_CELLS = 3;
+export const CREST_MIN_CELLS = 14;
 
 export interface ZoneShape {
   owner: FactionId;
-  /** the drawn frontier: open runs of the smoothed contour, never along the water */
+  cells: number;
+  /** dotted frontier: open runs of the smoothed contour, never along the water (empty for small zones) */
   frontier: Path2D;
-  /** the zone's area (all rings, even-odd), to keep the gradient inside */
+  /** smoothed rings in world units, for the watercolour band (coasts included) */
+  rings: Pt[][];
+  /** the zone's area (all rings, even-odd), to keep the band inside */
   area: Path2D;
-  crest: { x: number; y: number; size: number };
+  marker: { kind: "crest" | "pennant" | "none"; x: number; y: number; size: number };
 }
 
 export interface TerritoryGeometry {
@@ -262,7 +271,7 @@ export interface TerritoryGeometry {
 }
 
 let landClip: Path2D | null = null;
-/** Union of the playable cells: every frontier stroke is clipped to it. */
+/** Union of the playable cells: every stroke and band is clipped to it. */
 export function landPath(): Path2D {
   if (landClip) return landClip;
   landClip = new Path2D();
@@ -274,18 +283,29 @@ export function landPath(): Path2D {
 export const ownersKey = (cells: CellState[]) =>
   cells.map((c) => (STATIC_CELLS[c.id].terrain === "water" || !c.owner ? "." : c.owner[0])).join("");
 
+/** A darker shade of a Banner colour, for the dotted frontier. */
+export function darkShade(hex: string, k = 0.45) {
+  const n = parseInt(hex.slice(1), 16);
+  const d = (v: number) => Math.round(v * (1 - k));
+  return `rgb(${d(n >> 16)},${d((n >> 8) & 255)},${d(n & 255)})`;
+}
+
 export function buildTerritoryGeometry(cells: CellState[]): TerritoryGeometry {
   const owners = new Array<FactionId | null>(GRID_W * GRID_H).fill(null);
   for (const c of cells) owners[c.id] = c.owner;
-  const zones = computeZones(owners, isPlayable).map((z) => {
+  const zones = computeZones(owners, isPlayable).map((z): ZoneShape => {
+    const small = z.cells.length < MIN_ZONE_CELLS;
     const frontier = new Path2D();
     const area = new Path2D();
+    const rings: Pt[][] = [];
     for (const ring of z.rings) {
       const n = ring.points.length;
       const P = ring.points.map(([x, y]) => [x * CELL, y * CELL] as Pt);
+      rings.push(P);
       area.moveTo(P[0][0], P[0][1]);
       for (let i = 1; i < n; i++) area.lineTo(P[i][0], P[i][1]);
       area.closePath();
+      if (small) continue;
       // frontier runs: start after a water segment so a run never wraps around index 0
       const firstWater = ring.frontier.findIndex((f) => !f);
       if (firstWater === -1) {
@@ -306,67 +326,134 @@ export function buildTerritoryGeometry(cells: CellState[]): TerritoryGeometry {
         } else drawing = false;
       }
     }
-    return { owner: z.owner, frontier, area, crest: { x: z.crest.x * CELL, y: z.crest.y * CELL, size: z.crest.size * CELL } };
+    const marker: ZoneShape["marker"] = small
+      ? { kind: "pennant", x: z.crest.x * CELL, y: z.crest.y * CELL, size: CELL * 0.75 }
+      : z.cells.length >= CREST_MIN_CELLS
+        ? {
+            kind: "crest",
+            x: z.crest.x * CELL,
+            y: z.crest.y * CELL,
+            size: CELL * Math.max(0.9, Math.min(1.6, 0.28 * Math.sqrt(z.cells.length))),
+          }
+        : { kind: "none", x: 0, y: 0, size: 0 };
+    return { owner: z.owner, cells: z.cells.length, frontier, area, rings: small ? [] : rings, marker };
   });
   return { key: ownersKey(cells), zones };
 }
 
-/** Cached layer: the inner gradients and the crests (strokes are drawn live). */
-export function drawTerritory(
-  canvas: HTMLCanvasElement,
-  R: number,
-  geo: TerritoryGeometry,
-  crests: Partial<Record<FactionId, HTMLImageElement>>,
-) {
+/** Smooth pseudo-noise in [-1, 1] along a ring, stable from one load to the next. */
+const wobble = (s: number, seed: number) =>
+  (Math.sin(s * 0.083 + seed) + 0.6 * Math.sin(s * 0.211 + seed * 2.3) + 0.35 * Math.sin(s * 0.47 + seed * 0.7)) / 1.95;
+
+/** A ring pushed along its normals by the noise: irregular watercolour edges. */
+function jitteredRing(P: Pt[], amp: number, seed: number): Path2D {
+  const n = P.length;
+  const path = new Path2D();
+  let s = 0;
+  for (let i = 0; i <= n; i++) {
+    const p = P[i % n];
+    const prev = P[(i - 1 + n) % n];
+    const next = P[(i + 1) % n];
+    const tx = next[0] - prev[0];
+    const ty = next[1] - prev[1];
+    const len = Math.hypot(tx, ty) || 1;
+    if (i > 0) s += Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+    const d = amp * wobble(s, seed);
+    const x = p[0] + (-ty / len) * d;
+    const y = p[1] + (tx / len) * d;
+    if (i === 0) path.moveTo(x, y);
+    else path.lineTo(x, y);
+  }
+  return path;
+}
+
+/** Cached layer: the watercolour bands (composited with "multiply"). */
+export function drawTerritory(canvas: HTMLCanvasElement, R: number, geo: TerritoryGeometry) {
   const ctx = canvas.getContext("2d")!;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(R, 0, 0, R, 0, 0);
-  // each step adds the same opacity; GRADIENT_STEPS of them reach the start alpha on the frontier
-  const stepAlpha = 1 - Math.pow(1 - GRADIENT_START_ALPHA, 1 / GRADIENT_STEPS);
+  // BAND_STEPS passes of equal opacity add up to BAND_MAX_ALPHA right on the contour
+  const stepAlpha = 1 - Math.pow(1 - BAND_MAX_ALPHA, 1 / BAND_STEPS);
   const land = landPath();
-  for (const z of geo.zones) {
+  geo.zones.forEach((z, zi) => {
+    if (!z.rings.length) return;
+    const colour = FACTION_BY_ID[z.owner].color;
     ctx.save();
     ctx.clip(z.area, "evenodd");
     ctx.clip(land);
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
-    ctx.strokeStyle = rgba(FACTION_BY_ID[z.owner].color, stepAlpha);
-    for (let k = GRADIENT_STEPS; k >= 1; k--) {
-      ctx.lineWidth = (2 * GRADIENT_DEPTH * k) / GRADIENT_STEPS;
-      ctx.stroke(z.frontier);
+    for (let k = BAND_STEPS; k >= 1; k--) {
+      ctx.strokeStyle = rgba(colour, stepAlpha);
+      // each pass is a little narrower and wobbles differently: a soft, uneven inner edge
+      ctx.lineWidth = (2 * BAND_WIDTH * k) / BAND_STEPS;
+      for (const [ri, ring] of z.rings.entries()) ctx.stroke(jitteredRing(ring, BAND_JITTER, zi * 13.7 + ri * 3.1 + k * 1.9));
     }
+    // pigment pooling right along the edge, as watercolour dries
+    ctx.strokeStyle = rgba(colour, 0.22);
+    ctx.lineWidth = 3;
+    for (const [ri, ring] of z.rings.entries()) ctx.stroke(jitteredRing(ring, 0.8, zi * 5.3 + ri));
     ctx.restore();
-  }
-  for (const z of geo.zones) {
-    const img = crests[z.owner];
-    if (!img || !img.complete || !img.naturalWidth) continue;
-    const h = z.crest.size;
-    const w = (img.naturalWidth / img.naturalHeight) * h;
-    ctx.shadowColor = "rgba(0,0,0,0.45)";
-    ctx.shadowBlur = h * 0.12;
-    ctx.shadowOffsetY = h * 0.04;
-    ctx.drawImage(img, z.crest.x - w / 2, z.crest.y - h / 2, w, h);
-  }
-  ctx.shadowColor = "transparent";
+  });
 }
 
-/** The frontier strokes, at constant screen width. */
-function drawFrontiers(ctx: Ctx, geo: TerritoryGeometry, scale: number) {
+function pennant(ctx: Ctx, x: number, y: number, size: number, colour: string, px: number) {
+  const pole = size;
+  const bx = x - size * 0.15;
+  const by = y + size * 0.45;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(bx, by - pole);
+  ctx.lineTo(bx + size * 0.62, by - pole + size * 0.17);
+  ctx.lineTo(bx + size * 0.2, by - pole + size * 0.28);
+  ctx.lineTo(bx + size * 0.5, by - pole + size * 0.42);
+  ctx.lineTo(bx, by - pole + size * 0.48);
+  ctx.closePath();
+  ctx.fillStyle = colour;
+  ctx.fill();
+  ctx.strokeStyle = rgba(INK, 0.9);
+  ctx.lineWidth = Math.max(0.8, 0.9 * px);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(bx, by);
+  ctx.lineTo(bx, by - pole - size * 0.06);
+  ctx.lineWidth = Math.max(1, 1.2 * px);
+  ctx.stroke();
+}
+
+/** Live part of the territories: dotted frontiers, crests and pennants. */
+function drawTerritoryMarks(
+  ctx: Ctx,
+  geo: TerritoryGeometry,
+  scale: number,
+  crests: Partial<Record<FactionId, HTMLImageElement>>,
+) {
   if (!geo.zones.length) return;
+  const px = 1 / scale;
   ctx.save();
   ctx.clip(landPath());
-  ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.strokeStyle = "rgba(20,14,8,0.92)";
-  ctx.lineWidth = FRONTIER_INK_PX / scale;
-  for (const z of geo.zones) ctx.stroke(z.frontier);
-  ctx.lineWidth = FRONTIER_COLOUR_PX / scale;
+  ctx.lineJoin = "round";
+  ctx.lineWidth = FRONTIER_PX * px;
+  ctx.setLineDash([3 * px, 3 * px]);
   for (const z of geo.zones) {
-    ctx.strokeStyle = FACTION_BY_ID[z.owner].color;
+    if (z.cells < MIN_ZONE_CELLS) continue;
+    ctx.strokeStyle = darkShade(FACTION_BY_ID[z.owner].color);
     ctx.stroke(z.frontier);
   }
   ctx.restore();
+  for (const z of geo.zones) {
+    const m = z.marker;
+    if (m.kind === "pennant") pennant(ctx, m.x, m.y, m.size, FACTION_BY_ID[z.owner].color, px);
+    else if (m.kind === "crest") {
+      const img = crests[z.owner];
+      if (!img || !img.complete || !img.naturalWidth) continue;
+      const w = (img.naturalWidth / img.naturalHeight) * m.size;
+      ctx.drawImage(img, m.x - w / 2, m.y - m.size / 2, w, m.size);
+    }
+  }
 }
 
 /** Every edge of the playable cells: the discreet grid. */
@@ -415,9 +502,24 @@ export type MapFilter = "all" | "mine" | "contested" | "events";
 export interface OverlayIndex {
   contested: number[];
   mine: number[];
-  /** cells dimmed by the active filter (null = no filter) */
-  fog: number[] | null;
+  /**
+   * The filter veil: one uniform shade over the whole map with the matching cells cut
+   * out (null = no filter, or nothing matches — then nothing is dimmed).
+   */
+  veil: Path2D | null;
+  /** cells matching the active filter (null when no filter is active) */
+  matches: number | null;
   events: GameEvent[];
+}
+
+/** Cells matching a filter (land only). Shared by the map veil and the "nothing here" message. */
+export function filterMatches(cells: CellState[], events: GameEvent[], filter: MapFilter, now: number): number[] {
+  if (filter === "all") return [];
+  const land = cells.filter((c) => STATIC_CELLS[c.id]?.terrain !== "water");
+  if (filter === "mine") return land.filter((c) => c.mine > 0).map((c) => c.id);
+  if (filter === "contested") return land.filter(isContested).map((c) => c.id);
+  const active = events.filter((e) => e.zone && e.endsAt > now);
+  return land.filter((c) => active.some((e) => inZone(c.id % GRID_W, Math.floor(c.id / GRID_W), e.zone))).map((c) => c.id);
 }
 
 export function buildOverlayIndex(cells: CellState[], events: GameEvent[], filter: MapFilter, now: number): OverlayIndex {
@@ -429,17 +531,19 @@ export function buildOverlayIndex(cells: CellState[], events: GameEvent[], filte
     if (isContested(c)) contested.push(c.id);
     if (c.mine > 0) mine.push(c.id);
   }
-  let fog: number[] | null = null;
+  let veil: Path2D | null = null;
+  let matches: number | null = null;
   if (filter !== "all") {
-    const keep =
-      filter === "mine"
-        ? new Set(mine)
-        : filter === "contested"
-          ? new Set(contested)
-          : new Set(cells.filter((c) => active.some((e) => inZone(c.id % GRID_W, Math.floor(c.id / GRID_W), e.zone))).map((c) => c.id));
-    fog = cells.filter((c) => !keep.has(c.id) && STATIC_CELLS[c.id].terrain !== "water").map((c) => c.id);
+    const keep = filterMatches(cells, events, filter, now);
+    matches = keep.length;
+    if (keep.length) {
+      // the whole map, minus the matching cells (even-odd): one fill, no seams
+      veil = new Path2D();
+      veil.rect(0, 0, WORLD_W, WORLD_H);
+      for (const id of keep) veil.rect(cx(id % GRID_W), cy(Math.floor(id / GRID_W)), CELL, CELL);
+    }
   }
-  return { contested, mine, fog, events: active };
+  return { contested, mine, veil, matches, events: active };
 }
 
 export interface OverlayInput {
@@ -479,12 +583,13 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
     ctx.stroke(playableGrid());
   }
 
-  if (index.fog) {
-    ctx.fillStyle = "rgba(20,18,16,0.5)";
-    for (const id of pick(index.fog)) ctx.fillRect(cx(id % GRID_W), cy(Math.floor(id / GRID_W)), CELL, CELL);
-  }
 
-  drawFrontiers(ctx, o.territory, o.scale);
+  drawTerritoryMarks(ctx, o.territory, o.scale, o.crests);
+
+  if (index.veil) {
+    ctx.fillStyle = "rgba(20,18,16,0.5)";
+    ctx.fill(index.veil, "evenodd");
+  }
 
   const contested = pick(index.contested);
   if (contested.length) {

@@ -8,11 +8,11 @@
   --color-ink: #2a1f14;
   --color-gold: #c9a24b;
   --color-blood: #8e1b1b;
-  --color-goblins: #8fd13a;
-  --color-changelings: #8fd3f0;
-  --color-knaves: #c04bb0;
-  --color-unburied: #ede4cc;
-  --color-wretches: #e5482e;
+  --color-goblins: #7fa83a;
+  --color-changelings: #6fa9c8;
+  --color-knaves: #7a2e3b;
+  --color-unburied: #6b6f80;
+  --color-wretches: #c4502f;
 
   --font-display: var(--nf-cinzel), serif;
   --font-fell: var(--nf-fell), serif;

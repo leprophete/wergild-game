@@ -3,11 +3,11 @@
 begin;
 
 insert into public.factions (id, name, color, base_x, base_y) values
-  ('goblins', 'The Goblins', '#8FD13A', 14, 6),
-  ('changelings', 'The Changelings', '#8FD3F0', 10, 17),
-  ('knaves', 'The Knaves', '#C04BB0', 24, 13),
-  ('unburied', 'The Unburied', '#EDE4CC', 37, 4),
-  ('wretches', 'The Wretches', '#E5482E', 36, 19)
+  ('goblins', 'The Goblins', '#7FA83A', 14, 6),
+  ('changelings', 'The Changelings', '#6FA9C8', 10, 17),
+  ('knaves', 'The Knaves', '#7A2E3B', 24, 13),
+  ('unburied', 'The Unburied', '#6B6F80', 37, 4),
+  ('wretches', 'The Wretches', '#C4502F', 36, 19)
 on conflict (id) do update set name = excluded.name, color = excluded.color,
   base_x = excluded.base_x, base_y = excluded.base_y;
 

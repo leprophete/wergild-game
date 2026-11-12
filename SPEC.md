@@ -77,7 +77,7 @@ Où on voit les bannières : les 5 suspendues côte à côte sur `/join`, en en-
 | Situation | Rendu |
 | --- | --- |
 | Case neutre | Parchemin nu |
-| Zone tenue par une Bannière | Frontière : les cases adjacentes d'une Bannière fusionnent en une zone, dont le contour est lissé en courbes et coupé au masque de terre (il ne passe jamais sur l'eau). Trait d'encre sombre (~4 px) puis trait de la couleur vive de la Bannière (~2,5 px) par-dessus, et un dégradé intérieur qui part à 35 % d'opacité sur la frontière et s'efface en 1 à 2 cases. Pas de remplissage au centre. Un seul écu au centre de chaque zone, à une taille proportionnelle à la zone |
+| Zone tenue par une Bannière | Style carte ancienne coloriée à la main. Les cases adjacentes d'une Bannière fusionnent en une zone, dont le contour est lissé en courbes et coupé au masque de terre. Frontière : un trait fin en pointillé (~1,5 px) dans une version foncée de la couleur de la Bannière, jamais le long des côtes. Le long de l'intérieur de tout le contour (côtes comprises), une bande d'aquarelle d'environ 12 px aux bords légèrement irréguliers, qui s'estompe vers le centre (mode multiply, opacité max 45 %). Pas de remplissage au centre. Les zones de moins de 3 cases n'ont pas de frontière, seulement un petit fanion. Les écus, petits, ne figurent que sur les grandes zones |
 | Force de la garnison | Affichée dans le panneau de la case (barres par Bannière) |
 | Mes cases | Contour doré |
 | Case disputée (écart de moins de 10 % entre les deux premières Bannières) | Bordure en pointillé rouge sang qui pulse doucement |
@@ -96,13 +96,13 @@ Le fond de la carte est l'illustration `public/map/world.png` ; la grille 48 × 
 | Traits de la carte, texte gravé | Encre sépia | #2A1F14 |
 | Filets, ornements, mes cases | Or | #C9A24B |
 | Alertes, cases disputées | Rouge sang | #8E1B1B |
-| The Goblins (sur la carte) | Vert vif | #8FD13A |
-| The Changelings | Bleu glacier | #8FD3F0 |
-| The Knaves | Pourpre vif | #C04BB0 |
-| The Unburied | Os | #EDE4CC |
-| The Wretches | Rouge braise | #E5482E |
+| The Goblins (sur la carte) | Vert de mousse | #7FA83A |
+| The Changelings | Bleu d'étang | #6FA9C8 |
+| The Knaves | Lie-de-vin | #7A2E3B |
+| The Unburied | Gris de plomb | #6B6F80 |
+| The Wretches | Rouille de braise | #C4502F |
 
-Sur la carte, les couleurs des Bannières dessinent les frontières des zones (pas de lavis plein, qui disparaissait sur les terrains de même couleur). Les cinq teintes sont vives pour rester distinctes sur l'illustration ; le trait d'encre sombre sous chaque frontière et l'écu au centre de la zone servent de second repère.
+Sur la carte, les couleurs des Bannières sont posées comme sur une carte ancienne coloriée à la main : une bande d'aquarelle le long de l'intérieur des frontières et un fin pointillé foncé, sans lavis plein. Les cinq teintes sont des pigments sourds qui restent distincts sur l'illustration ; le pointillé et l'écu des grandes zones servent de second repère.
 
 ### Typographies
 

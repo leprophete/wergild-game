@@ -8,7 +8,7 @@ import { applyDeploy, applyWithdraw } from "@/lib/map/demoActions";
 import { payloadToCells } from "@/lib/map/remote";
 import { useLiveMap } from "@/lib/map/useLiveMap";
 import { playerForce, type CellState, type FeedEntry, type GameEvent, type PlayerState } from "@/lib/map/state";
-import type { MapFilter } from "@/lib/map/render";
+import { filterMatches, type MapFilter } from "@/lib/map/render";
 import { supabaseConfigured } from "@/lib/supabase/client";
 import MapCanvas from "./MapCanvas";
 import { MiniBanners, TopBar } from "./TopBar";
@@ -112,6 +112,10 @@ export default function MapClient() {
         : null
       : world.player;
   const deployed = useMemo(() => cells.reduce((s, c) => s + c.mine, 0), [cells]);
+  const filterCount = useMemo(
+    () => (filter === "all" ? 0 : filterMatches(cells, world?.events ?? [], filter, Date.now()).length),
+    [cells, world?.events, filter],
+  );
   const reserve = me ? playerForce(me) - deployed : 0;
 
   // Move: after choosing an amount, the next tap on the map picks the destination.
@@ -240,7 +244,11 @@ export default function MapClient() {
             seasonSub={`Season ${roman(world.season.number)} of $WERGILD · the war of the five Banners`}
             onSelect={select}
           />
-          <MapFilters value={filter} onChange={setFilter} />
+          <MapFilters
+            value={filter}
+            onToggle={(f) => setFilter((cur) => (cur === f ? "all" : f))}
+            matches={filterCount}
+          />
           {moveFrom && (
             <div className="absolute inset-x-3 top-14 z-20 mx-auto flex max-w-md items-center gap-3 rounded-md border border-gold bg-charcoal/95 px-3 py-2 text-sm shadow-xl">
               <span className="flex-1 text-parchment/90">
