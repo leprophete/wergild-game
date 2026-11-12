@@ -37,7 +37,7 @@ export function KnellOverlay({ season, onClose }: { season: ArchiveSummary; onCl
         <div className="relative mt-10 w-full">
           <div className="knell-map relative overflow-hidden rounded-[2px] shadow-[0_10px_30px_rgba(0,0,0,0.6)]" style={{ aspectRatio: "48 / 30" }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/map/world-1600.jpg" alt="" className="absolute inset-0 h-full w-full object-cover" />
+            <img src="/map/world@1x.webp" alt="" className="absolute inset-0 h-full w-full object-cover" />
           </div>
           <div className="knell-roller pointer-events-none absolute -inset-x-3 h-8 -translate-y-1/2 rounded-full sm:h-10">
             <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">

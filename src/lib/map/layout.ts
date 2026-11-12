@@ -3,7 +3,7 @@ import { FACTIONS, type FactionId } from "@/lib/factions";
 import { WATCHTOWER_CELLS, WORLD_MASK } from "./mask";
 
 /**
- * Static geography of the map, derived from the land/water mask of public/map/world.png:
+ * Static geography of the map, derived from the land/water mask of public/map/world@4x.webp:
  * sea and river are not playable; the river splits around Knave's Hollow and is crossed
  * only by the four bridges.
  */

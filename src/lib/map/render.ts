@@ -1,14 +1,15 @@
 import rough from "roughjs";
-import { COOLDOWN_MINUTES, GARRISON_MEDIUM, GARRISON_STRONG, GRID_H, GRID_W } from "@config/game";
+import type { Drawable } from "roughjs/bin/core";
+import { CONTESTED_GAP_PCT, COOLDOWN_MINUTES, GARRISON_MEDIUM, GARRISON_STRONG, GRID_H, GRID_W } from "@config/game";
 import { FACTION_BY_ID, type FactionId } from "@/lib/factions";
 import { STATIC_CELLS, cellId, isPlayable } from "./layout";
 import { WATCHTOWER_CELLS } from "./mask";
-import { inZone, isContested, type CellState, type GameEvent } from "./state";
+import { inZone, rankedForces, type CellState, type GameEvent } from "./state";
 import { computeZones, type Pt } from "./zones";
 
 // ---------------------------------------------------------------------------
 // World geometry (world units; the canvas transform does the zoom).
-// The map is the illustration public/map/world.png, exactly 48 × 30 cells.
+// The map is the illustration public/map/world@4x.webp, exactly 48 × 30 cells.
 // ---------------------------------------------------------------------------
 export const CELL = 32;
 export const WORLD_W = GRID_W * CELL;
@@ -36,7 +37,6 @@ export function worldToCell(wx: number, wy: number): number | null {
 }
 
 type Ctx = CanvasRenderingContext2D;
-type Rough = ReturnType<typeof rough.canvas>;
 const rgba = (hex: string, a: number) => {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
@@ -49,60 +49,71 @@ function ink(ctx: Ctx, width = 0.9, alpha = 0.85) {
 }
 
 // ---------------------------------------------------------------------------
-// Background (cached canvas, drawn once): the illustration, the place names in
-// IM Fell English, the watchtowers, the season cartouche and the compass rose.
+// Decor drawn over the illustration: watchtowers, place names in IM Fell English, the
+// season cartouche and the compass rose. Redrawn LIVE at every zoom level (vector strokes
+// and text stay crisp); only the rough.js shapes are generated once.
 // ---------------------------------------------------------------------------
-export function drawBackground(
-  canvas: HTMLCanvasElement,
-  R: number,
-  fonts: Fonts,
-  world: HTMLImageElement,
-  seasonTitle: string,
-  seasonSub: string,
-) {
-  const ctx = canvas.getContext("2d")!;
-  ctx.setTransform(R, 0, 0, R, 0, 0);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(world, 0, 0, WORLD_W, WORLD_H);
-  const rc = rough.canvas(canvas);
-  drawTowers(ctx, rc);
-  drawPlaceNames(ctx, fonts);
-  drawCartouche(ctx, rc, fonts, seasonTitle, seasonSub);
-  drawCompass(ctx, fonts);
+export interface Decor {
+  rough: Drawable[];
 }
 
-function drawTowers(ctx: Ctx, rc: Rough) {
+export function buildDecor(): Decor {
+  const gen = rough.generator();
+  const out: Drawable[] = [];
   for (const [tx, ty] of WATCHTOWER_CELLS) {
     const seed = cellId(tx, ty) + 1;
     const x = cx(tx) + CELL / 2;
     const by = cy(ty) + CELL - 4;
-    rc.polygon(
-      [
-        [x - 7, by],
-        [x - 5, by - 16],
-        [x + 5, by - 16],
-        [x + 7, by],
-      ],
-      { seed, stroke: INK, strokeWidth: 1.1, fill: PARCH, fillStyle: "solid", roughness: 0.7 },
+    out.push(
+      gen.polygon(
+        [
+          [x - 7, by],
+          [x - 5, by - 16],
+          [x + 5, by - 16],
+          [x + 7, by],
+        ],
+        { seed, stroke: INK, strokeWidth: 1.1, fill: PARCH, fillStyle: "solid", roughness: 0.7 },
+      ),
+      gen.polygon(
+        [
+          [x - 7, by - 16],
+          [x - 7, by - 21],
+          [x - 4, by - 21],
+          [x - 4, by - 19],
+          [x - 1, by - 19],
+          [x - 1, by - 21],
+          [x + 2, by - 21],
+          [x + 2, by - 19],
+          [x + 4, by - 19],
+          [x + 4, by - 21],
+          [x + 7, by - 21],
+          [x + 7, by - 16],
+        ],
+        { seed: seed + 1, stroke: INK, strokeWidth: 1, fill: PARCH, fillStyle: "solid", roughness: 0.5 },
+      ),
     );
-    rc.polygon(
-      [
-        [x - 7, by - 16],
-        [x - 7, by - 21],
-        [x - 4, by - 21],
-        [x - 4, by - 19],
-        [x - 1, by - 19],
-        [x - 1, by - 21],
-        [x + 2, by - 21],
-        [x + 2, by - 19],
-        [x + 4, by - 19],
-        [x + 4, by - 21],
-        [x + 7, by - 21],
-        [x + 7, by - 16],
-      ],
-      { seed: seed + 1, stroke: INK, strokeWidth: 1, fill: PARCH, fillStyle: "solid", roughness: 0.5 },
-    );
+  }
+  const { x, y, w, h } = CARTOUCHE;
+  out.push(
+    gen.rectangle(x, y, w, h, { seed: 9001, stroke: INK, strokeWidth: 1.4, fill: "#efe4c8", fillStyle: "solid", roughness: 0.8 }),
+    gen.rectangle(x + 4, y + 4, w - 8, h - 8, { seed: 9002, stroke: INK, strokeWidth: 0.6, roughness: 0.8 }),
+  );
+  return { rough: out };
+}
+
+export function drawDecor(ctx: Ctx, decor: Decor, fonts: Fonts, seasonTitle: string, seasonSub: string) {
+  const rc = rough.canvas(ctx.canvas);
+  for (const d of decor.rough) rc.draw(d);
+  drawTowerDetails(ctx);
+  drawPlaceNames(ctx, fonts);
+  drawCartouche(ctx, fonts, seasonTitle, seasonSub);
+  drawCompass(ctx, fonts);
+}
+
+function drawTowerDetails(ctx: Ctx) {
+  for (const [tx, ty] of WATCHTOWER_CELLS) {
+    const x = cx(tx) + CELL / 2;
+    const by = cy(ty) + CELL - 4;
     ctx.beginPath();
     ink(ctx, 0.6, 0.7);
     for (let i = 0; i < 4; i++) {
@@ -160,14 +171,11 @@ function drawPlaceNames(ctx: Ctx, fonts: Fonts) {
   for (const p of PLACE_NAMES) letter(ctx, p.text, cx(p.x), cy(p.y), p.size, fonts.fell, { rot: p.rot });
 }
 
-function drawCartouche(ctx: Ctx, rc: Rough, fonts: Fonts, title: string, sub: string) {
-  // bottom-left, over the open sea
-  const x = 14;
-  const y = WORLD_H - 74;
-  const w = 268;
-  const h = 58;
-  rc.rectangle(x, y, w, h, { seed: 9001, stroke: INK, strokeWidth: 1.4, fill: "#efe4c8", fillStyle: "solid", roughness: 0.8 });
-  rc.rectangle(x + 4, y + 4, w - 8, h - 8, { seed: 9002, stroke: INK, strokeWidth: 0.6, roughness: 0.8 });
+/** bottom-left, over the open sea */
+const CARTOUCHE = { x: 14, y: WORLD_H - 74, w: 268, h: 58 };
+
+function drawCartouche(ctx: Ctx, fonts: Fonts, title: string, sub: string) {
+  const { x, y, w, h } = CARTOUCHE;
   for (const side of [-1, 1]) {
     const sx = side < 0 ? x : x + w;
     ctx.beginPath();
@@ -398,7 +406,44 @@ export function drawTerritory(canvas: HTMLCanvasElement, R: number, geo: Territo
   });
 }
 
-function pennant(ctx: Ctx, x: number, y: number, size: number, colour: string, px: number) {
+// ---------------------------------------------------------------------------
+// Levels of detail, by the on-screen size of a cell (CSS px):
+//   overview  — frontiers and crests only (pennants for the very small zones);
+//   medium    — + crossed swords, only on cells really disputed (top two within 10 %);
+//   close     — + garrison pawns, only on held cells, never on neutral ones.
+// Pawns and swords are engraved in sepia ink (INK), thin and small, at a constant screen size.
+// ---------------------------------------------------------------------------
+export const SWORDS_FROM_PX = 34;
+export const PAWNS_FROM_PX = 58;
+export type Detail = "overview" | "medium" | "close";
+export const detailAt = (cellPx: number): Detail =>
+  cellPx >= PAWNS_FROM_PX ? "close" : cellPx >= SWORDS_FROM_PX ? "medium" : "overview";
+
+/** On-screen sizes (CSS px) of the engraved marks. */
+const PENNANT_PX = 17;
+const SWORDS_PX = 13;
+const PAWN_PX = 9;
+
+/** A cell is really disputed when at least two Banners stand on it within CONTESTED_GAP_PCT. */
+export function trulyContested(c: CellState): boolean {
+  const r = rankedForces(c);
+  if (r.length < 2 || r[1].force <= 0) return false;
+  return (r[0].force - r[1].force) / r[0].force < CONTESTED_GAP_PCT / 100;
+}
+
+type Box = { x0: number; y0: number; x1: number; y1: number };
+const overlaps = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+/** Where a pennant stands (world units) for a given screen scale: its bounding box. */
+function pennantBox(x: number, y: number, px: number): Box {
+  const size = PENNANT_PX * px;
+  const bx = x - size * 0.15;
+  const by = y + size * 0.45;
+  return { x0: bx - 1.5 * px, y0: by - size * 1.08, x1: bx + size * 0.64, y1: by + px };
+}
+
+function pennant(ctx: Ctx, x: number, y: number, colour: string, px: number) {
+  const size = PENNANT_PX * px;
   const pole = size;
   const bx = x - size * 0.15;
   const by = y + size * 0.45;
@@ -414,13 +459,28 @@ function pennant(ctx: Ctx, x: number, y: number, size: number, colour: string, p
   ctx.fillStyle = colour;
   ctx.fill();
   ctx.strokeStyle = rgba(INK, 0.9);
-  ctx.lineWidth = Math.max(0.8, 0.9 * px);
+  ctx.lineWidth = 0.9 * px;
   ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(bx, by);
   ctx.lineTo(bx, by - pole - size * 0.06);
-  ctx.lineWidth = Math.max(1, 1.2 * px);
+  ctx.lineWidth = 1.2 * px;
   ctx.stroke();
+}
+
+/** Boxes taken by the territory markers (pennants and crests) at this scale: swords keep clear of them. */
+function markerBoxes(geo: TerritoryGeometry, crests: Partial<Record<FactionId, HTMLImageElement>>, px: number): Box[] {
+  const out: Box[] = [];
+  for (const z of geo.zones) {
+    const m = z.marker;
+    if (m.kind === "pennant") out.push(pennantBox(m.x, m.y, px));
+    else if (m.kind === "crest") {
+      const img = crests[z.owner];
+      const w = img && img.naturalWidth ? (img.naturalWidth / img.naturalHeight) * m.size : m.size * 0.86;
+      out.push({ x0: m.x - w / 2, y0: m.y - m.size / 2, x1: m.x + w / 2, y1: m.y + m.size / 2 });
+    }
+  }
+  return out;
 }
 
 /** Live part of the territories: dotted frontiers, crests and pennants. */
@@ -446,7 +506,7 @@ function drawTerritoryMarks(
   ctx.restore();
   for (const z of geo.zones) {
     const m = z.marker;
-    if (m.kind === "pennant") pennant(ctx, m.x, m.y, m.size, FACTION_BY_ID[z.owner].color, px);
+    if (m.kind === "pennant") pennant(ctx, m.x, m.y, FACTION_BY_ID[z.owner].color, px);
     else if (m.kind === "crest") {
       const img = crests[z.owner];
       if (!img || !img.complete || !img.naturalWidth) continue;
@@ -457,9 +517,8 @@ function drawTerritoryMarks(
 }
 
 // ---------------------------------------------------------------------------
-// Garrisons: small pawns drawn with the quill instead of numbers — 1 pawn for a weak
-// garrison, 2 for a medium one, 3 for a strong one (thresholds in config/game.ts).
-// Cached layer, rebuilt only when a cell's owner or garrison level changes.
+// Garrisons: 1 pawn for a weak garrison, 2 for a medium one, 3 for a strong one
+// (thresholds in config/game.ts). Drawn live, close up only.
 // ---------------------------------------------------------------------------
 export function garrisonLevel(total: number): 0 | 1 | 2 | 3 {
   if (total <= 0) return 0;
@@ -469,140 +528,119 @@ export function garrisonLevel(total: number): 0 | 1 | 2 | 3 {
 }
 const totalOf = (c: CellState) => Object.values(c.forces).reduce((s, v) => s + (v ?? 0), 0);
 
-/** Owner + garrison level of every cell: the pawn layer is redrawn only when it changes. */
-export const pawnsKey = (cells: CellState[]) =>
-  cells.map((c) => (c.owner && STATIC_CELLS[c.id].terrain !== "water" ? c.owner[0] + garrisonLevel(totalOf(c)) : ".")).join("");
-
-const PAWN = 6.2; // world units
-
-/** Pawn positions in a cell (centre-bottom), for 1, 2 or 3 pawns. */
-function pawnSpots(level: number): [number, number][] {
-  if (level === 1) return [[0, 0]];
-  if (level === 2) return [[-4.2, 0.6], [4.2, 0.6]];
-  return [[-7, 1.2], [0, -0.6], [7, 1.2]];
-}
-
-function quillPawn(ctx: Ctx, x: number, by: number, s: number) {
+/**
+ * An engraved pawn: outline only, a little cross-hatching on the shadow side, no fill.
+ * (x, by) = centre of its base; h = height in world units.
+ */
+function engravedPawn(ctx: Ctx, x: number, by: number, h: number) {
+  const r = h * 0.17;
+  const hy = by - h + r;
   ctx.beginPath();
-  ctx.arc(x, by - s * 0.92, s * 0.3, 0, Math.PI * 2);
-  ctx.moveTo(x - s * 0.17, by - s * 0.62);
-  ctx.quadraticCurveTo(x - s * 0.5, by - s * 0.2, x - s * 0.46, by);
-  ctx.lineTo(x + s * 0.46, by);
-  ctx.quadraticCurveTo(x + s * 0.5, by - s * 0.2, x + s * 0.17, by - s * 0.62);
-  ctx.fill();
+  ctx.arc(x, hy, r, 0, Math.PI * 2);
+  // collar
+  ctx.moveTo(x - h * 0.2, hy + r * 1.35);
+  ctx.lineTo(x + h * 0.2, hy + r * 1.35);
+  // body, flaring to the base
+  ctx.moveTo(x - h * 0.12, hy + r * 1.35);
+  ctx.quadraticCurveTo(x - h * 0.13, by - h * 0.22, x - h * 0.3, by - h * 0.07);
+  ctx.lineTo(x - h * 0.3, by);
+  ctx.lineTo(x + h * 0.3, by);
+  ctx.lineTo(x + h * 0.3, by - h * 0.07);
+  ctx.quadraticCurveTo(x + h * 0.13, by - h * 0.22, x + h * 0.12, hy + r * 1.35);
+  ctx.stroke();
+  // hatching on the right (shadow) side
+  ctx.beginPath();
+  for (let k = 0; k < 3; k++) {
+    const yy = by - h * (0.12 + k * 0.13);
+    ctx.moveTo(x + h * 0.06, yy);
+    ctx.lineTo(x + h * (0.17 + k * 0.01), yy - h * 0.06);
+  }
   ctx.stroke();
 }
 
-function drawPawnsAt(ctx: Ctx, id: number, level: number, s = PAWN) {
+/** Pawn offsets (in pawn heights) for 1, 2 or 3 pawns, centred on the cell's lower half. */
+function pawnSpots(level: number): [number, number][] {
+  if (level === 1) return [[0, 0]];
+  if (level === 2) return [[-0.42, 0], [0.42, 0]];
+  return [[-0.75, 0.08], [0, -0.06], [0.75, 0.08]];
+}
+
+function drawGarrison(ctx: Ctx, id: number, level: number, h: number) {
   const x0 = cx(id % GRID_W) + CELL / 2;
-  const y0 = cy(Math.floor(id / GRID_W)) + CELL - 6;
-  for (const [dx, dy] of pawnSpots(level)) quillPawn(ctx, x0 + dx, y0 + dy, s);
+  const y0 = cy(Math.floor(id / GRID_W)) + CELL * 0.8;
+  for (const [dx, dy] of pawnSpots(level)) engravedPawn(ctx, x0 + dx * h, y0 + dy * h, h);
 }
 
-export function drawPawnLayer(canvas: HTMLCanvasElement, R: number, cells: CellState[]) {
-  const ctx = canvas.getContext("2d")!;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.setTransform(R, 0, 0, R, 0, 0);
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
-  ctx.lineWidth = 0.9;
-  ctx.strokeStyle = rgba(INK, 0.92);
-  ctx.fillStyle = "rgba(240,230,205,0.92)";
-  for (const c of cells) {
-    if (!c.owner || STATIC_CELLS[c.id].terrain === "water") continue;
-    const level = garrisonLevel(totalOf(c));
-    if (level) drawPawnsAt(ctx, c.id, level);
-  }
-}
-
-/** Pawns fade in with the zoom: hidden at the widest view, fully drawn from ~30 px per cell. */
-export const pawnAlphaAt = (cellPx: number) => Math.max(0, Math.min(1, (cellPx - 17) / 12));
-
-/** Two small crossed swords: the mark of a contested cell. */
+/** Two small crossed swords, engraved: thin blades, guards and pommels, no fill. (x, y) = centre. */
 function crossedSwords(ctx: Ctx, x: number, y: number, s: number, px: number) {
   ctx.save();
   ctx.translate(x, y);
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = rgba(INK, 0.95);
   for (const dir of [1, -1]) {
     ctx.save();
     ctx.rotate((dir * Math.PI) / 4);
-    // blade
+    ctx.lineWidth = 0.85 * px;
     ctx.beginPath();
-    ctx.moveTo(0, -s * 0.62);
-    ctx.lineTo(s * 0.09, -s * 0.5);
-    ctx.lineTo(s * 0.09, s * 0.22);
-    ctx.lineTo(-s * 0.09, s * 0.22);
-    ctx.lineTo(-s * 0.09, -s * 0.5);
-    ctx.closePath();
-    ctx.fillStyle = "#e9e2d0";
-    ctx.fill();
-    ctx.lineWidth = Math.max(0.7, 0.8 * px);
-    ctx.strokeStyle = rgba(INK, 0.95);
+    // blade: a long narrow outline with its fuller
+    ctx.moveTo(0, -s * 0.6);
+    ctx.lineTo(s * 0.06, -s * 0.48);
+    ctx.lineTo(s * 0.06, s * 0.2);
+    ctx.moveTo(0, -s * 0.6);
+    ctx.lineTo(-s * 0.06, -s * 0.48);
+    ctx.lineTo(-s * 0.06, s * 0.2);
+    ctx.moveTo(0, -s * 0.44);
+    ctx.lineTo(0, s * 0.14);
+    // guard
+    ctx.moveTo(-s * 0.22, s * 0.21);
+    ctx.lineTo(s * 0.22, s * 0.21);
+    // grip
+    ctx.moveTo(0, s * 0.22);
+    ctx.lineTo(0, s * 0.42);
     ctx.stroke();
-    // guard and grip
+    // pommel
     ctx.beginPath();
-    ctx.moveTo(-s * 0.26, s * 0.24);
-    ctx.lineTo(s * 0.26, s * 0.24);
-    ctx.lineWidth = Math.max(1.4, 1.5 * px);
-    ctx.strokeStyle = BLOOD;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, s * 0.26);
-    ctx.lineTo(0, s * 0.5);
-    ctx.lineWidth = Math.max(1.2, 1.3 * px);
-    ctx.strokeStyle = rgba(INK, 0.95);
+    ctx.arc(0, s * 0.47, s * 0.05, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
   ctx.restore();
 }
 
-/** Every edge of the playable cells: the discreet grid. */
-let gridPath: Path2D | null = null;
-function playableGrid(): Path2D {
-  if (gridPath) return gridPath;
-  gridPath = new Path2D();
-  for (let y = 0; y <= GRID_H; y++) {
-    for (let x = 0; x <= GRID_W; x++) {
-      const here = isPlayable(x, y);
-      if (y < GRID_H && (here || isPlayable(x - 1, y))) {
-        gridPath.moveTo(cx(x), cy(y));
-        gridPath.lineTo(cx(x), cy(y + 1));
-      }
-      if (x < GRID_W && (here || isPlayable(x, y - 1))) {
-        gridPath.moveTo(cx(x), cy(y));
-        gridPath.lineTo(cx(x + 1), cy(y));
-      }
-    }
+/** Picks a corner of the cell for the swords, clear of any pennant or crest; null if none is free. */
+function swordSpot(id: number, size: number, markers: Box[]): [number, number] | null {
+  const x = cx(id % GRID_W);
+  const y = cy(Math.floor(id / GRID_W));
+  const h = size / 2 + 1;
+  const spots: [number, number][] = [
+    [x + CELL - h, y + h],
+    [x + h, y + h],
+    [x + CELL - h, y + CELL - h],
+    [x + h, y + CELL - h],
+  ];
+  for (const [sx, sy] of spots) {
+    const box = { x0: sx - h, y0: sy - h, x1: sx + h, y1: sy + h };
+    if (!markers.some((m) => overlaps(m, box))) return [sx, sy];
   }
-  return gridPath;
+  return null;
 }
 
-/** Grid alpha by zoom: hidden at overview, fades in from ~24 to ~48 px per cell. */
-export const gridAlphaAt = (cellPx: number) => Math.max(0, Math.min(1, (cellPx - 24) / 24)) * 0.32;
-
-/** Cells around `id` lit by the hover grid (radius in cells). */
-export const HOVER_RADIUS = 2;
+/** The hovered cell, and its neighbours (their marks share the repainted margin). */
 export function hoverArea(id: number | null): number[] {
-  if (id === null) return [];
-  const x0 = id % GRID_W;
-  const y0 = Math.floor(id / GRID_W);
-  const out: number[] = [];
-  for (let y = y0 - HOVER_RADIUS - 1; y <= y0 + HOVER_RADIUS + 1; y++)
-    for (let x = x0 - HOVER_RADIUS - 1; x <= x0 + HOVER_RADIUS + 1; x++)
-      if (x >= 0 && y >= 0 && x < GRID_W && y < GRID_H) out.push(cellId(x, y));
-  return out;
+  return id === null ? [] : [id];
 }
 
 // ---------------------------------------------------------------------------
-// Overlay: filters, frontiers, my cells, contested pulse, events, wet ink, crests,
-// grid, hover and selection. Lists are built once per data change, never per frame.
+// Overlay: filters, frontiers, my cells, swords, events, pawns, hover and selection.
+// Lists are built once per data change, never per frame.
 // ---------------------------------------------------------------------------
 export type MapFilter = "all" | "mine" | "contested" | "events";
 
 export interface OverlayIndex {
   contested: number[];
+  /** cells held by a Banner with soldiers on them, and their garrison level */
+  garrisons: [number, number][];
   mine: number[];
   /**
    * The filter veil: one uniform shade over the whole map with the matching cells cut
@@ -619,7 +657,7 @@ export function filterMatches(cells: CellState[], events: GameEvent[], filter: M
   if (filter === "all") return [];
   const land = cells.filter((c) => STATIC_CELLS[c.id]?.terrain !== "water");
   if (filter === "mine") return land.filter((c) => c.mine > 0).map((c) => c.id);
-  if (filter === "contested") return land.filter(isContested).map((c) => c.id);
+  if (filter === "contested") return land.filter(trulyContested).map((c) => c.id);
   const active = events.filter((e) => e.zone && e.endsAt > now);
   return land.filter((c) => active.some((e) => inZone(c.id % GRID_W, Math.floor(c.id / GRID_W), e.zone))).map((c) => c.id);
 }
@@ -627,10 +665,15 @@ export function filterMatches(cells: CellState[], events: GameEvent[], filter: M
 export function buildOverlayIndex(cells: CellState[], events: GameEvent[], filter: MapFilter, now: number): OverlayIndex {
   const active = events.filter((e) => e.zone && e.endsAt > now);
   const contested: number[] = [];
+  const garrisons: [number, number][] = [];
   const mine: number[] = [];
   for (const c of cells) {
     if (STATIC_CELLS[c.id]?.terrain === "water") continue;
-    if (isContested(c)) contested.push(c.id);
+    if (trulyContested(c)) contested.push(c.id);
+    if (c.owner) {
+      const level = garrisonLevel(totalOf(c));
+      if (level) garrisons.push([c.id, level]);
+    }
     if (c.mine > 0) mine.push(c.id);
   }
   let veil: Path2D | null = null;
@@ -645,7 +688,7 @@ export function buildOverlayIndex(cells: CellState[], events: GameEvent[], filte
       for (const id of keep) veil.rect(cx(id % GRID_W), cy(Math.floor(id / GRID_W)), CELL, CELL);
     }
   }
-  return { contested, mine, veil, matches, events: active };
+  return { contested, garrisons, mine, veil, matches, events: active };
 }
 
 export interface OverlayInput {
@@ -657,11 +700,17 @@ export interface OverlayInput {
   now: number;
   fonts: Fonts;
   crests: Partial<Record<FactionId, HTMLImageElement>>;
-  /** screen px per world unit — keeps strokes legible and skips tiny text */
+  /** screen px per world unit — keeps strokes legible and picks the level of detail */
   scale: number;
+  /** visible part of the world: marks outside it are skipped */
+  view: { x0: number; y0: number; x1: number; y1: number };
 }
 
-
+const inView = (id: number, v: OverlayInput["view"]) => {
+  const x = cx(id % GRID_W);
+  const y = cy(Math.floor(id / GRID_W));
+  return x + CELL >= v.x0 && x <= v.x1 && y + CELL >= v.y0 && y <= v.y1;
+};
 
 /**
  * Draws the overlay. With `only`, per-cell marks are limited to those cells
@@ -670,17 +719,8 @@ export interface OverlayInput {
 export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<number>) {
   const { cells, index, now, fonts } = o;
   const px = 1 / o.scale; // one screen pixel in world units
-  const cellPx = CELL * o.scale;
-  const pick = (ids: number[]) => (only ? ids.filter((i) => only.has(i)) : ids);
-
-  // the grid: only when zoomed in (hover adds its own local grid below)
-  const gAlpha = gridAlphaAt(cellPx);
-  if (gAlpha > 0) {
-    ctx.strokeStyle = rgba(INK, gAlpha);
-    ctx.lineWidth = Math.max(0.5, 0.8 * px);
-    ctx.stroke(playableGrid());
-  }
-
+  const detail = detailAt(CELL * o.scale);
+  const pick = (ids: number[]) => ids.filter((i) => (only ? only.has(i) : true) && inView(i, o.view));
 
   drawTerritoryMarks(ctx, o.territory, o.scale, o.crests);
 
@@ -699,9 +739,36 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
     ctx.stroke();
   }
 
-  // contested cells: two small crossed swords in the upper corner
-  for (const id of pick(index.contested)) {
-    crossedSwords(ctx, cx(id % GRID_W) + CELL - 8, cy(Math.floor(id / GRID_W)) + 8, 12, px);
+  // medium zoom and closer: crossed swords on the cells really disputed, clear of the pennants
+  if (detail !== "overview") {
+    const size = SWORDS_PX * px;
+    const markers = markerBoxes(o.territory, o.crests, px);
+    for (const id of pick(index.contested)) {
+      const spot = swordSpot(id, size, markers);
+      if (spot) crossedSwords(ctx, spot[0], spot[1], size, px);
+    }
+  }
+
+  // close up: the garrisons, engraved in sepia; my fresh soldiers in wet iron-gall ink
+  if (detail === "close") {
+    const h = PAWN_PX * px;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.lineWidth = 0.8 * px;
+    ctx.strokeStyle = rgba(INK, 0.92);
+    const wet: [number, number, number][] = [];
+    for (const [id, level] of index.garrisons) {
+      if ((only && !only.has(id)) || !inView(id, o.view)) continue;
+      const c = cells[id];
+      const w = c.mine > 0 && c.wetUntil && c.wetUntil > now ? (c.wetUntil - now) / (COOLDOWN_MINUTES * 60_000) : 0;
+      if (w > 0) wet.push([id, level, w]);
+      else drawGarrison(ctx, id, level, h);
+    }
+    for (const [id, level, w] of wet) {
+      ctx.strokeStyle = `rgb(${Math.round(18 + 24 * (1 - w))},${Math.round(22 + 9 * (1 - w))},${Math.round(58 - 38 * (1 - w))})`;
+      ctx.lineWidth = (0.8 + 0.4 * w) * px;
+      drawGarrison(ctx, id, level, h);
+    }
   }
 
   for (const e of index.events) {
@@ -745,48 +812,11 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
     ctx.fillText(when, x + w / 2, ly + 19);
   }
 
-  // wet ink: soldiers just placed are redrawn in fresh, glossy iron-gall ink that dries in 1 h
-  const pAlpha = pawnAlphaAt(cellPx);
-  if (pAlpha > 0 && mine.length) {
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    for (const id of mine) {
-      const c = cells[id];
-      const wet = c.wetUntil && c.wetUntil > now ? (c.wetUntil - now) / (COOLDOWN_MINUTES * 60_000) : 0;
-      if (wet <= 0) continue;
-      const level = garrisonLevel(totalOf(c)) || 1;
-      ctx.globalAlpha = pAlpha;
-      ctx.shadowColor = `rgba(20,30,70,${0.55 * wet})`;
-      ctx.shadowBlur = 3 * wet;
-      ctx.strokeStyle = `rgb(${Math.round(18 + 24 * (1 - wet))},${Math.round(22 + 9 * (1 - wet))},${Math.round(58 - 38 * (1 - wet))})`;
-      ctx.lineWidth = 1.1 + 0.5 * wet;
-      ctx.fillStyle = "rgba(240,230,205,0.95)";
-      drawPawnsAt(ctx, id, level);
-      ctx.shadowBlur = 0;
-      ctx.shadowColor = "transparent";
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  // hover: a small local grid fading around the cursor, and the cell itself
-  if (o.hoverId !== null && (!only || only.has(o.hoverId))) {
-    const hx = o.hoverId % GRID_W;
-    const hy = Math.floor(o.hoverId / GRID_W);
-    ctx.lineWidth = Math.max(0.6, 0.9 * px);
-    for (let y = hy - HOVER_RADIUS; y <= hy + HOVER_RADIUS; y++) {
-      for (let x = hx - HOVER_RADIUS; x <= hx + HOVER_RADIUS; x++) {
-        if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H || !isPlayable(x, y)) continue;
-        const d = Math.hypot(x - hx, y - hy);
-        if (d > HOVER_RADIUS + 0.5) continue;
-        ctx.strokeStyle = rgba(INK, 0.38 * (1 - d / (HOVER_RADIUS + 1)));
-        ctx.strokeRect(cx(x) + 0.5, cy(y) + 0.5, CELL - 1, CELL - 1);
-      }
-    }
-    if (o.hoverId !== o.selectedId) {
-      ctx.strokeStyle = rgba(INK, 0.8);
-      ctx.lineWidth = Math.max(1.2, 1.2 * px);
-      ctx.strokeRect(cx(hx) + 0.5, cy(hy) + 0.5, CELL - 1, CELL - 1);
-    }
+  // the grid: only on the hovered cell
+  if (o.hoverId !== null && o.hoverId !== o.selectedId && (!only || only.has(o.hoverId)) && isPlayable(o.hoverId % GRID_W, Math.floor(o.hoverId / GRID_W))) {
+    ctx.strokeStyle = rgba(INK, 0.75);
+    ctx.lineWidth = 1.1 * px;
+    ctx.strokeRect(cx(o.hoverId % GRID_W), cy(Math.floor(o.hoverId / GRID_W)), CELL, CELL);
   }
   if (o.selectedId !== null && (!only || only.has(o.selectedId))) {
     const x = cx(o.selectedId % GRID_W);
@@ -852,28 +882,16 @@ export function diffAnimations(prev: CellState[], next: CellState[], now: number
 
 const ease = (t: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
 
-function pawn(ctx: Ctx, x: number, y: number, s: number) {
-  ctx.beginPath();
-  ctx.arc(x, y - s * 0.9, s * 0.32, 0, Math.PI * 2);
-  ctx.moveTo(x - s * 0.18, y - s * 0.6);
-  ctx.lineTo(x - s * 0.45, y);
-  ctx.lineTo(x + s * 0.45, y);
-  ctx.lineTo(x + s * 0.18, y - s * 0.6);
-  ctx.fillStyle = PARCH;
-  ctx.fill();
-  ctx.stroke();
-}
-
 function pawns(ctx: Ctx, cx0: number, cy0: number, reveal: number) {
   // the quill draws from left to right
   ctx.save();
   ctx.beginPath();
   ctx.rect(cx0 - CELL / 2, cy0 - CELL / 2, CELL * reveal, CELL);
   ctx.clip();
-  ink(ctx, 1, 0.95);
-  pawn(ctx, cx0 - 8, cy0 + 9, 9);
-  pawn(ctx, cx0, cy0 + 6, 10);
-  pawn(ctx, cx0 + 8, cy0 + 9, 9);
+  ink(ctx, 0.9, 0.95);
+  engravedPawn(ctx, cx0 - 7, cy0 + 10, 9);
+  engravedPawn(ctx, cx0, cy0 + 8, 10);
+  engravedPawn(ctx, cx0 + 7, cy0 + 10, 9);
   ctx.restore();
 }
 

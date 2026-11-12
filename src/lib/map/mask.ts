@@ -1,7 +1,7 @@
 import type { FactionId } from "@/lib/factions";
 
 /**
- * LAND / WATER MASK of public/map/world.png — one character per cell (48 × 30).
+ * LAND / WATER MASK of public/map/world@4x.webp — one character per cell (48 × 30).
  *   .  land (playable)
  *   ~  sea or river (not playable)
  *   =  bridge (playable, crosses the river)

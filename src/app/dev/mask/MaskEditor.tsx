@@ -21,7 +21,7 @@ export default function MaskEditor() {
       imgRef.current = img;
       setLoaded(true);
     };
-    img.src = "/map/world-1600.jpg";
+    img.src = "/map/world@1x.webp";
   }, []);
 
   useEffect(() => {

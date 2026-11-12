@@ -11,26 +11,26 @@ import {
   WORLD_H,
   WORLD_W,
   buildOverlayIndex,
+  buildDecor,
   buildTerritoryGeometry,
-  drawPawnLayer,
   ownersKey,
-  pawnAlphaAt,
-  pawnsKey,
   cx,
   cy,
   diffAnimations,
   drawAnimations,
-  drawBackground,
+  drawDecor,
   drawOverlay,
   drawTerritory,
   hoverArea,
   worldToCell,
   type CellAnim,
+  type Decor,
   type Fonts,
   type MapFilter,
   type OverlayIndex,
   type TerritoryGeometry,
 } from "@/lib/map/render";
+import { LEVEL_RES, MAX_STRETCH, WorldImagery, type WorldRect } from "@/lib/map/imagery";
 
 interface Props {
   cells: CellState[];
@@ -49,7 +49,10 @@ interface View {
   ty: number;
 }
 
+/** Never more than this on screen per cell (CSS px), whatever the screen. */
 const MAX_ZOOM_CELL_PX = 140;
+/** Canvas backing store: devicePixelRatio, capped (memory on 3× phones). */
+const MAX_DPR = 2;
 /** Screen strip kept clear at the top of the map, under the filter bar, when the whole map is shown. */
 const TOP_INSET = 52;
 /** Wet ink dries and event countdowns tick: a full redraw this often, no more. */
@@ -93,10 +96,9 @@ interface RenderStats {
 export default function MapCanvas(props: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const bgRef = useRef<HTMLCanvasElement | null>(null);
+  const imageryRef = useRef<WorldImagery | null>(null);
+  const decorRef = useRef<Decor | null>(null);
   const terrRef = useRef<HTMLCanvasElement | null>(null);
-  const pawnRef = useRef<HTMLCanvasElement | null>(null);
-  const pawnKeyRef = useRef("");
   const tipRef = useRef<HTMLDivElement>(null);
   const resRef = useRef(2);
   const fontsRef = useRef<Fonts | null>(null);
@@ -107,7 +109,7 @@ export default function MapCanvas(props: Props) {
   const hoverRef = useRef<number | null>(null);
   const animsRef = useRef<CellAnim[]>([]);
   const prevCellsRef = useRef<CellState[] | null>(null);
-  const indexRef = useRef<OverlayIndex>({ contested: [], mine: [], veil: null, matches: null, events: [] })
+  const indexRef = useRef<OverlayIndex>({ contested: [], garrisons: [], mine: [], veil: null, matches: null, events: [] });
   const geoRef = useRef<TerritoryGeometry>({ key: "", zones: [] });
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -117,7 +119,14 @@ export default function MapCanvas(props: Props) {
   const sched = useRef({ raf: 0, full: false, region: new Set<number>() });
   const statsRef = useRef<RenderStats>({ full: 0, region: 0, lastFullMs: 0, lastTerritoryMs: 0, territoryCells: 0 });
 
-  const overlayInput = (now: number) => {
+  /** The part of the world on screen (world units). */
+  const visibleRect = (): WorldRect => {
+    const { w, h } = sizeRef.current;
+    const v = viewRef.current;
+    return { x0: -v.tx / v.s, y0: -v.ty / v.s, x1: (w - v.tx) / v.s, y1: (h - v.ty) / v.s };
+  };
+
+  const overlayInput = (now: number, view: WorldRect) => {
     const p = propsRef.current;
     return {
       cells: p.cells,
@@ -129,72 +138,72 @@ export default function MapCanvas(props: Props) {
       fonts: fontsRef.current!,
       crests: crestsRef.current,
       scale: viewRef.current.s,
+      view,
     };
   };
 
-  const renderFull = (ctx: CanvasRenderingContext2D, t: number) => {
-    const bg = bgRef.current!;
+  /** Illustration + decor + watercolour for a world rectangle (the canvas may be clipped to it). */
+  const drawBase = (ctx: CanvasRenderingContext2D, rect: WorldRect) => {
+    const { dpr } = sizeRef.current;
+    const v = viewRef.current;
+    const p = propsRef.current;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    imageryRef.current!.draw(ctx, rect, dpr * v.s);
+    // watercolour bands: multiply, like pigment on paper (soft by nature: a cached layer)
     const terr = terrRef.current!;
+    const R = resRef.current;
+    const x0 = Math.max(0, rect.x0);
+    const y0 = Math.max(0, rect.y0);
+    const x1 = Math.min(WORLD_W, rect.x1);
+    const y1 = Math.min(WORLD_H, rect.y1);
+    if (x1 > x0 && y1 > y0) {
+      ctx.globalCompositeOperation = "multiply";
+      ctx.drawImage(terr, x0 * R, y0 * R, (x1 - x0) * R, (y1 - y0) * R, x0, y0, x1 - x0, y1 - y0);
+      ctx.globalCompositeOperation = "source-over";
+    }
+    // towers, names, cartouche, compass: vector, redrawn at this zoom
+    drawDecor(ctx, decorRef.current!, fontsRef.current!, p.seasonTitle, p.seasonSub);
+  };
+
+  const renderFull = (ctx: CanvasRenderingContext2D, t: number) => {
     const { dpr } = sizeRef.current;
     const v = viewRef.current;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = CHARCOAL;
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(bg, 0, 0, WORLD_W, WORLD_H);
-    // watercolour bands: multiply, like pigment on paper
-    ctx.globalCompositeOperation = "multiply";
-    ctx.drawImage(terr, 0, 0, WORLD_W, WORLD_H);
-    ctx.globalCompositeOperation = "source-over";
-    const pa = pawnAlphaAt(CELL * v.s);
-    if (pa > 0 && pawnRef.current) {
-      ctx.globalAlpha = pa;
-      ctx.drawImage(pawnRef.current, 0, 0, WORLD_W, WORLD_H);
-      ctx.globalAlpha = 1;
-    }
+    const view = visibleRect();
+    drawBase(ctx, view);
     animsRef.current = drawAnimations(ctx, animsRef.current, t);
-    drawOverlay(ctx, overlayInput(Date.now()), t);
+    drawOverlay(ctx, overlayInput(Date.now(), view), t);
   };
 
   /** Repaints only the given cells (plus a small margin): used by hover and the animations. */
   const renderRegion = (ctx: CanvasRenderingContext2D, ids: Set<number>, t: number) => {
-    const bg = bgRef.current!;
-    const terr = terrRef.current!;
-    const R = resRef.current;
     const { dpr } = sizeRef.current;
     const v = viewRef.current;
     ctx.setTransform(dpr * v.s, 0, 0, dpr * v.s, dpr * v.tx, dpr * v.ty);
     ctx.save();
     ctx.beginPath();
     const touched = new Set<number>();
+    const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
     for (const id of ids) {
       const x = cx(id % GRID_W) - PAD;
       const y = cy(Math.floor(id / GRID_W)) - PAD;
       ctx.rect(x, y, CELL + PAD * 2, CELL + PAD * 2);
+      box.x0 = Math.min(box.x0, x);
+      box.y0 = Math.min(box.y0, y);
+      box.x1 = Math.max(box.x1, x + CELL + PAD * 2);
+      box.y1 = Math.max(box.y1, y + CELL + PAD * 2);
       touched.add(id);
       // neighbours share the padded margin: redraw their marks too
-      for (const n of [id - 1, id + 1, id - GRID_W, id + GRID_W]) if (n >= 0 && n < 1440) touched.add(n);
+      for (const n of [id - 1, id + 1, id - GRID_W, id + GRID_W]) if (n >= 0 && n < GRID_W * 30) touched.add(n);
     }
     ctx.clip();
-    for (const id of ids) {
-      const x = cx(id % GRID_W) - PAD;
-      const y = cy(Math.floor(id / GRID_W)) - PAD;
-      const w = CELL + PAD * 2;
-      ctx.drawImage(bg, x * R, y * R, w * R, w * R, x, y, w, w);
-      ctx.globalCompositeOperation = "multiply";
-      ctx.drawImage(terr, x * R, y * R, w * R, w * R, x, y, w, w);
-      ctx.globalCompositeOperation = "source-over";
-      const pa = pawnAlphaAt(CELL * v.s);
-      if (pa > 0 && pawnRef.current) {
-        ctx.globalAlpha = pa;
-        ctx.drawImage(pawnRef.current, x * R, y * R, w * R, w * R, x, y, w, w);
-        ctx.globalAlpha = 1;
-      }
-    }
+    drawBase(ctx, box);
     animsRef.current = drawAnimations(ctx, animsRef.current, t);
-    drawOverlay(ctx, overlayInput(Date.now()), t, touched);
+    drawOverlay(ctx, overlayInput(Date.now(), visibleRect()), t, touched);
     ctx.restore();
   };
 
@@ -202,7 +211,7 @@ export default function MapCanvas(props: Props) {
     const s = sched.current;
     s.raf = 0;
     const canvas = canvasRef.current;
-    if (!canvas || !bgRef.current || !terrRef.current || !fontsRef.current) return;
+    if (!canvas || !imageryRef.current || !decorRef.current || !terrRef.current || !fontsRef.current) return;
     if (document.hidden) {
       s.full = true; // repaint everything when the tab comes back
       return;
@@ -240,10 +249,12 @@ export default function MapCanvas(props: Props) {
     const { w, h } = sizeRef.current;
     return Math.min(w / WORLD_W, (h - TOP_INSET) / WORLD_H);
   };
+  /** The closest zoom that stays sharp: the 4× master, stretched at most MAX_STRETCH on this screen. */
+  const maxScale = () => Math.min(MAX_ZOOM_CELL_PX / CELL, (LEVEL_RES.l4 * MAX_STRETCH) / sizeRef.current.dpr);
   const clampView = (v: View): View => {
     const { w, h } = sizeRef.current;
     const min = fitScale() * 0.9;
-    const max = MAX_ZOOM_CELL_PX / 32;
+    const max = Math.max(min, maxScale());
     const s = Math.min(max, Math.max(min, v.s));
     const mw = WORLD_W * s;
     const mh = WORLD_H * s;
@@ -257,8 +268,10 @@ export default function MapCanvas(props: Props) {
     viewRef.current = clampView(v);
     invalidate();
   };
-  const zoomAt = (px: number, py: number, ns: number) => {
+  const zoomAt = (px: number, py: number, wanted: number) => {
     const v = viewRef.current;
+    // clamp first, so the point under the cursor stays put at the zoom limits
+    const ns = Math.min(Math.max(fitScale() * 0.9, maxScale()), Math.max(fitScale() * 0.9, wanted));
     const wx = (px - v.tx) / v.s;
     const wy = (py - v.ty) / v.s;
     setView({ s: ns, tx: px - wx * ns, ty: py - wy * ns });
@@ -300,32 +313,20 @@ export default function MapCanvas(props: Props) {
             }),
         ),
       );
-      // the illustration: full size on desktop (3172 px), a 1600 px version on phones
+      // the illustration: overview level first; sharper levels and tiles come with the zoom
+      const imagery = new WorldImagery(() => invalidate());
+      if (!(await imagery.init()) || cancelled) return;
       const mobile = Math.min(window.innerWidth, window.innerHeight) < 700;
-      const world = await new Promise<HTMLImageElement | null>((res) => {
-        const img = new Image();
-        img.decoding = "async";
-        img.onload = () => res(img);
-        img.onerror = () => res(null);
-        img.src = mobile ? "/map/world-1600.jpg" : "/map/world.jpg";
-      });
-      if (cancelled || !world) return;
-      // cached background resolution ≈ the image's own resolution, never more
-      const R = Math.min(mobile ? 1.3 : 2.06, world.naturalWidth / WORLD_W);
+      if (!mobile) imagery.prefetchMedium();
+      imageryRef.current = imagery;
+      decorRef.current = buildDecor();
+      // the watercolour layer is soft by nature: a modest cached resolution is enough
+      const R = mobile ? 1.3 : 2;
       resRef.current = R;
-      const bg = document.createElement("canvas");
-      bg.width = Math.round(WORLD_W * R);
-      bg.height = Math.round(WORLD_H * R);
-      drawBackground(bg, R, fonts, world, propsRef.current.seasonTitle, propsRef.current.seasonSub);
       const terr = document.createElement("canvas");
-      terr.width = bg.width;
-      terr.height = bg.height;
-      const pawnsCanvas = document.createElement("canvas");
-      pawnsCanvas.width = bg.width;
-      pawnsCanvas.height = bg.height;
-      bgRef.current = bg;
+      terr.width = Math.round(WORLD_W * R);
+      terr.height = Math.round(WORLD_H * R);
       terrRef.current = terr;
-      pawnRef.current = pawnsCanvas;
       setReady(true);
     })();
     return () => {
@@ -345,12 +346,6 @@ export default function MapCanvas(props: Props) {
       drawTerritory(terrRef.current, resRef.current, geoRef.current);
       statsRef.current.territoryCells = geoRef.current.zones.length;
       statsRef.current.geometryBuilds = (statsRef.current.geometryBuilds ?? 0) + 1;
-    }
-    // garrison pawns: rebuilt only when an owner or a garrison level changes
-    const pk = pawnsKey(props.cells);
-    if (pk !== pawnKeyRef.current && pawnRef.current) {
-      drawPawnLayer(pawnRef.current, resRef.current, props.cells);
-      pawnKeyRef.current = pk;
     }
     if (prev && prev !== props.cells) {
       if (!reducedMotion()) {
@@ -405,9 +400,9 @@ export default function MapCanvas(props: Props) {
   useEffect(() => {
     const wrap = wrapRef.current!;
     const canvas = canvasRef.current!;
-    const ro = new ResizeObserver(() => {
+    const measure = () => {
       const r = wrap.getBoundingClientRect();
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const dpr = Math.min(MAX_DPR, window.devicePixelRatio || 1);
       sizeRef.current = { w: r.width, h: r.height, dpr };
       canvas.width = Math.round(r.width * dpr);
       canvas.height = Math.round(r.height * dpr);
@@ -415,9 +410,25 @@ export default function MapCanvas(props: Props) {
         fit();
         fittedRef.current = true;
       } else setView(viewRef.current);
-    });
+    };
+    const ro = new ResizeObserver(measure);
     ro.observe(wrap);
-    return () => ro.disconnect();
+    // moving the window to a screen with another pixel density: re-measure (sharpness, zoom limit)
+    let mq: MediaQueryList | null = null;
+    const watchDpr = () => {
+      mq?.removeEventListener("change", onDpr);
+      mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      mq.addEventListener("change", onDpr);
+    };
+    const onDpr = () => {
+      measure();
+      watchDpr();
+    };
+    watchDpr();
+    return () => {
+      ro.disconnect();
+      mq?.removeEventListener("change", onDpr);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
