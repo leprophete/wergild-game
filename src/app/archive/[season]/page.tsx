@@ -90,7 +90,9 @@ export default async function ArchiveSeasonPage({ params }: Props) {
                       <span className="inline-flex items-center gap-1.5">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={f.crest} alt="" className="h-4 w-auto" />
-                        {f.name}
+                        <Link href={`/banner/${f.id}`} className="hover:text-gold hover:underline">
+                          {f.name}
+                        </Link>
                       </span>
                     </td>
                     <td className="py-1.5 text-right font-mono">{held(f.id)}</td>

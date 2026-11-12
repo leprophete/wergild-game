@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { FACTION_BY_ID } from "@/lib/factions";
 import type { RankingResponse } from "@/lib/game/ranking";
@@ -73,7 +74,7 @@ export default function RankingClient() {
               <li key={f.id} className="flex w-[19%] flex-col items-center">
                 <div className="w-px bg-gold/50 transition-[height] duration-700" style={{ height: drop }} />
                 <div className="flex h-4 items-end">{i === 0 && f.points > 0 ? <Crown /> : null}</div>
-                <div className="banner-sway" style={{ animationDelay: `${-i * 0.9}s` }}>
+                <Link href={`/banner/${f.id}`} aria-label={`${fac.name}: the Banner's page`} className="banner-sway block" style={{ animationDelay: `${-i * 0.9}s` }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={fac.banner}
@@ -85,7 +86,7 @@ export default function RankingClient() {
                         : "drop-shadow-[0_6px_10px_rgba(0,0,0,0.6)]"
                     }`}
                   />
-                </div>
+                </Link>
                 <div className={`mt-2 text-center ${mine ? "text-gold" : "text-parchment/90"}`}>
                   <div className="font-display text-[10px] tracking-[0.06em] sm:text-sm">
                     <span className="text-parchment/45">#{i + 1}</span> {fac.name}

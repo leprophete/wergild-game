@@ -232,7 +232,7 @@ Le site compte 7 pages publiques et 1 page admin. La carte est le cœur du produ
 | Accueil | `/` | Grimoire fermé « $WERGILD — Season N » qui s'ouvre au clic sur un aperçu en direct de la carte. Onboarding en 3 parchemins, compte à rebours de fin de saison, bouton « Buy $WERGILD » (lien pump.fun ou Jupiter) et bouton « Play » | Non |
 | Carte | `/map` | Carte plein écran, zoom et déplacement, panneau latéral (voir ci-dessous) | Pour jouer ; spectateur sinon |
 | Choix de faction | `/join` | Les 5 Bannières suspendues côte à côte, avec pour chacun la force, le nombre de membres et un statut « fermé » si la faction dépasse 35 % | Oui |
-| Faction | `/banniere/[nom]` | Territoire, membres, top contributeurs, historique des points de la saison, lien vers le Telegram de la faction | Non |
+| Faction | `/banner/[name]` | Territoire, membres, top contributeurs, historique des points de la saison, lien vers le Telegram de la faction | Non |
 | Classement | `/ranking` | Factions (points de la saison) et joueurs (Renown), affichés en bannières qui descendent plus ou moins bas selon les points | Non |
 | Mon Écu | `/me` | Soldats, force, ancienneté, bonus vétéran, cases tenues, Renown, badges | Oui |
 | Chroniques | `/archive` | Les pages des saisons passées en lecture seule, avec la faction gagnante et le top 10 | Non |
@@ -325,7 +325,7 @@ Chaque action de jeu (`deploy`, `withdraw`, `move`) passe par une fonction Postg
 
 ### Fichier de config
 
-Tous les paramètres entre crochets des règles vivent dans `config/game.ts` : `TOKENS_PER_SOLDIER`, `VETERAN_MAX_DAYS`, `MAX_FORCE_PER_CELL`, `COOLDOWN_MINUTES`, `FACTION_CAP_PCT`, `SEASON_DAYS`, `BONUS_CELL_POINTS`, `GRID_W`, `GRID_H`, `TOKEN_MINT`, `EXCLUDED_WALLETS`.
+Tous les paramètres entre crochets des règles vivent dans `config/game.ts` : `TOKENS_PER_SOLDIER`, `VETERAN_MAX_DAYS`, `MAX_FORCE_PER_CELL`, `COOLDOWN_MINUTES`, `FACTION_CAP_PCT`, `SEASON_DAYS`, `BONUS_CELL_POINTS`, `GRID_W`, `GRID_H`, `TOKEN_MINT`, FACTION\_TELEGRAM\_LINKS, `EXCLUDED_WALLETS`.
 
 ## Anti-triche et sécurité
 
@@ -388,7 +388,7 @@ Lis SPEC.md. Implémente /api/deploy, /api/withdraw et /api/move via une fonctio
 ### Étape 6 : score et classements
 
 ```text
-Lis SPEC.md. Implémente le tick de score horaire avec pg_cron (règle 7, force minimale de l'heure, cases bonus, Renown individuel) et la page /ranking. Affiche le score des factions en haut de /map (5 bannières miniatures) et dans le panneau latéral. Toutes les heures en UTC. Ajoute des tests.
+Lis SPEC.md. Implémente le tick de score horaire avec pg_cron (règle 7, force minimale de l'heure, cases bonus, Renown individuel), la page /ranking et la page de chaque Bannière /banner/[name] : bannière et vignette de la terre d'origine en en-tête, territoire actuel (mini-carte et nombre de cases), membres, top 10 des contributeurs en Renown, historique des points de la saison en graphique, et lien Telegram de la faction (FACTION_TELEGRAM_LINKS dans la config). Affiche le score des factions en haut de /map (5 bannières miniatures) et dans le panneau latéral. Toutes les heures en UTC. Ajoute des tests.
 ```
 
 ### Étape 7 : saisons, événements, archives, admin

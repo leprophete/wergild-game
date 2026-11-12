@@ -397,7 +397,9 @@ export function TheWar({
             <span className="w-4 text-right font-mono text-xs text-parchment/45">{i + 1}</span>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={f.crest} alt="" className="h-5 w-auto" />
-            <span className="flex-1 truncate text-parchment/85">{f.name}</span>
+            <Link href={`/banner/${f.id}`} className="flex-1 truncate text-parchment/85 hover:text-gold hover:underline">
+              {f.name}
+            </Link>
             <span className="font-mono text-parchment">{fmt(scores[f.id] ?? 0)}</span>
             <span className="w-14 text-right font-mono text-[11px] text-parchment/45">+{fmt(lastHour[f.id] ?? 0)}/h</span>
           </li>

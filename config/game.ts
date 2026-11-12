@@ -62,6 +62,15 @@ export const DEV_WALLET = process.env.NEXT_PUBLIC_DEV_WALLET ?? "";
 /** Rule 10 — liquidity pool, pump.fun bonding curve, dev wallet, known exchanges. */
 export const EXCLUDED_WALLETS: string[] = [];
 
+// Banner pages — each Banner's Telegram group (empty until it exists: the link is hidden)
+export const FACTION_TELEGRAM_LINKS: Record<"goblins" | "changelings" | "knaves" | "unburied" | "wretches", string> = {
+  goblins: "",
+  changelings: "",
+  knaves: "",
+  unburied: "",
+  wretches: "",
+};
+
 // Token & chain
 /** pump.fun tokens use 6 decimals. */
 export const TOKEN_DECIMALS = 6;

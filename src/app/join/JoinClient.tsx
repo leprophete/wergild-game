@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FACTION_CAP_PCT } from "@config/game";
@@ -97,6 +98,9 @@ export default function JoinClient() {
           return (
             <div key={f.id} className="flex w-[150px] shrink-0 snap-center flex-col items-center md:w-[170px]">
               <div className="h-[3px] w-[110%] rounded-full bg-gradient-to-r from-transparent via-gold/70 to-transparent" />
+              <Link href={`/banner/${f.id}`} className="mt-2 text-xs text-gold/80 hover:text-gold hover:underline">
+                About this Banner →
+              </Link>
               <button
                 onClick={() => onPick(f.id)}
                 disabled={disabled}
@@ -125,6 +129,9 @@ export default function JoinClient() {
                   {b ? `${b.sharePct}%` : "—"}
                 </dd>
               </dl>
+              <Link href={`/banner/${f.id}`} className="mt-2 text-xs text-gold/80 hover:text-gold hover:underline">
+                About this Banner →
+              </Link>
               <button
                 onClick={() => onPick(f.id)}
                 disabled={disabled}

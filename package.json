@@ -9,7 +9,7 @@
     "lint": "eslint",
     "seed:gen": "tsx scripts/gen-seed.ts",
     "devnet": "tsx scripts/devnet-token.ts",
-    "test": "tsx tests/zones.test.ts",
+    "test": "tsx tests/zones.test.ts && tsx tests/banner.test.ts",
     "map:images": "node scripts/gen-map-images.mjs"
   },
   "dependencies": {
