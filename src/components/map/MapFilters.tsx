@@ -27,7 +27,7 @@ export function MapFilters({
 }) {
   const active = FILTERS.find((f) => f.id === value);
   return (
-    <div className="absolute left-3 top-3 z-10 flex flex-col items-start gap-1.5">
+    <div className="absolute left-11 top-3 z-10 flex flex-col items-start gap-1.5 md:left-[68px]">
       <div className="flex gap-1 rounded-md border border-gold/30 bg-charcoal/85 p-1 shadow-lg backdrop-blur-sm" role="group" aria-label="Map filters">
         {FILTERS.map((f) => {
           const on = value === f.id;

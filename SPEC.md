@@ -76,15 +76,24 @@ Où on voit les bannières : les 5 suspendues côte à côte sur `/join`, en en-
 
 | Situation | Rendu |
 | --- | --- |
-| Case neutre | Parchemin nu |
+| Case neutre | L'illustration nue |
 | Zone tenue par une Bannière | Style carte ancienne coloriée à la main. Les cases adjacentes d'une Bannière fusionnent en une zone, dont le contour est lissé en courbes et coupé au masque de terre. Frontière : un trait fin en pointillé (~1,5 px) dans une version foncée de la couleur de la Bannière, jamais le long des côtes. Le long de l'intérieur de tout le contour (côtes comprises), une bande d'aquarelle d'environ 12 px aux bords légèrement irréguliers, qui s'estompe vers le centre (mode multiply, opacité max 45 %). Pas de remplissage au centre. Les zones de moins de 3 cases n'ont pas de frontière, seulement un petit fanion. Les écus, petits, ne figurent que sur les grandes zones |
-| Force de la garnison | Affichée dans le panneau de la case (barres par Bannière) |
-| Mes cases | Contour doré |
-| Case disputée (écart de moins de 10 % entre les deux premières Bannières) | Bordure en pointillé rouge sang qui pulse doucement |
+| Force de la garnison | Petits pions dessinés à la plume, sans chiffre : 1 pion pour une garnison faible, 2 pour moyenne, 3 pour forte (seuils `GARRISON_MEDIUM` et `GARRISON_STRONG` dans `config/game.ts`). Ils s'estompent en vue d'ensemble. Le chiffre exact n'apparaît qu'au survol de la case et dans le panneau de droite |
+| Mes cases | Fin liseré doré |
+| Case disputée (écart de moins de 10 % entre les deux premières Bannières) | Deux petites épées croisées dans le coin de la case |
 | Case bonus | Une tour de guet dessinée |
-| Soldats récemment déplacés (cooldown) | Chiffre à l'encre brillante, « encore humide », qui sèche en 1 h |
+| Soldats récemment déplacés (cooldown) | Mes pions redessinés à l'encre bleu-noir brillante, « encore humide », qui sèche en 1 h |
 
-Le fond de la carte est l'illustration `public/map/world.png` ; la grille 48 × 30 s'y superpose, très discrète, visible seulement au survol et au zoom. Les cases de mer et de fleuve sont injouables (masque terre/mer). L'encre humide montre le cooldown sans compte à rebours.
+Le fond de la carte est l'illustration `public/map/world.png` ; la grille 48 × 30 s'y superpose, très discrète, visible seulement au survol et au zoom. Les cases de mer et de fleuve sont injouables (masque terre/mer). Aucun chiffre n'est affiché en permanence sur la carte. L'encre humide montre le cooldown sans compte à rebours.
+
+### Ornements
+
+Les ornements dorés de `public/ornaments/` restent discrets : la carte et les informations de jeu passent avant.
+
+- **Cadre de la carte** : les 4 coins (`corner_*.png`) posés aux angles, jamais étirés, reliés par un filet doré fin (CSS) qui prolonge exactement leurs pointes.
+- **Panneau « My Army »** : `border_horizontal` en haut du panneau, `divider_wings` comme séparateur entre les sections.
+- **Lettrine enluminée** au début des textes de lore (capitale Cinzel dorée dans un petit cadre vert sombre). Jamais sur les textes d'interface.
+- Les panneaux de chiffres restent sobres et lisibles.
 
 ### Palette
 

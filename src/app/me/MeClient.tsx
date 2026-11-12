@@ -6,6 +6,7 @@ import { FACTION_BY_ID } from "@/lib/factions";
 import { useSession } from "@/components/wallet/SessionProvider";
 import { useWalletModal } from "@/components/wallet/WalletModal";
 import { RecruitNotice } from "@/components/map/SidePanel";
+import { Lore } from "@/components/Ornaments";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
@@ -91,9 +92,7 @@ export default function MeClient() {
       <section className="mt-8">
         <h2 className="font-display text-sm tracking-[0.18em] text-gold">BADGES</h2>
         {me.badges.length === 0 ? (
-          <p className="mt-2 font-fell italic text-parchment/55">
-            No badge yet. The ten most renowned of each season are honoured for ever.
-          </p>
+          <Lore className="mt-3">No badge yet. The ten most renowned of each season are honoured for ever.</Lore>
         ) : (
           <ul className="mt-2 flex flex-wrap gap-2">
             {me.badges.map((b) => (

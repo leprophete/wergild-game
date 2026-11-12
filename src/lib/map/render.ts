@@ -1,5 +1,5 @@
 import rough from "roughjs";
-import { COOLDOWN_MINUTES, GRID_H, GRID_W } from "@config/game";
+import { COOLDOWN_MINUTES, GARRISON_MEDIUM, GARRISON_STRONG, GRID_H, GRID_W } from "@config/game";
 import { FACTION_BY_ID, type FactionId } from "@/lib/factions";
 import { STATIC_CELLS, cellId, isPlayable } from "./layout";
 import { WATCHTOWER_CELLS } from "./mask";
@@ -456,6 +456,108 @@ function drawTerritoryMarks(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Garrisons: small pawns drawn with the quill instead of numbers — 1 pawn for a weak
+// garrison, 2 for a medium one, 3 for a strong one (thresholds in config/game.ts).
+// Cached layer, rebuilt only when a cell's owner or garrison level changes.
+// ---------------------------------------------------------------------------
+export function garrisonLevel(total: number): 0 | 1 | 2 | 3 {
+  if (total <= 0) return 0;
+  if (total >= GARRISON_STRONG) return 3;
+  if (total >= GARRISON_MEDIUM) return 2;
+  return 1;
+}
+const totalOf = (c: CellState) => Object.values(c.forces).reduce((s, v) => s + (v ?? 0), 0);
+
+/** Owner + garrison level of every cell: the pawn layer is redrawn only when it changes. */
+export const pawnsKey = (cells: CellState[]) =>
+  cells.map((c) => (c.owner && STATIC_CELLS[c.id].terrain !== "water" ? c.owner[0] + garrisonLevel(totalOf(c)) : ".")).join("");
+
+const PAWN = 6.2; // world units
+
+/** Pawn positions in a cell (centre-bottom), for 1, 2 or 3 pawns. */
+function pawnSpots(level: number): [number, number][] {
+  if (level === 1) return [[0, 0]];
+  if (level === 2) return [[-4.2, 0.6], [4.2, 0.6]];
+  return [[-7, 1.2], [0, -0.6], [7, 1.2]];
+}
+
+function quillPawn(ctx: Ctx, x: number, by: number, s: number) {
+  ctx.beginPath();
+  ctx.arc(x, by - s * 0.92, s * 0.3, 0, Math.PI * 2);
+  ctx.moveTo(x - s * 0.17, by - s * 0.62);
+  ctx.quadraticCurveTo(x - s * 0.5, by - s * 0.2, x - s * 0.46, by);
+  ctx.lineTo(x + s * 0.46, by);
+  ctx.quadraticCurveTo(x + s * 0.5, by - s * 0.2, x + s * 0.17, by - s * 0.62);
+  ctx.fill();
+  ctx.stroke();
+}
+
+function drawPawnsAt(ctx: Ctx, id: number, level: number, s = PAWN) {
+  const x0 = cx(id % GRID_W) + CELL / 2;
+  const y0 = cy(Math.floor(id / GRID_W)) + CELL - 6;
+  for (const [dx, dy] of pawnSpots(level)) quillPawn(ctx, x0 + dx, y0 + dy, s);
+}
+
+export function drawPawnLayer(canvas: HTMLCanvasElement, R: number, cells: CellState[]) {
+  const ctx = canvas.getContext("2d")!;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(R, 0, 0, R, 0, 0);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.lineWidth = 0.9;
+  ctx.strokeStyle = rgba(INK, 0.92);
+  ctx.fillStyle = "rgba(240,230,205,0.92)";
+  for (const c of cells) {
+    if (!c.owner || STATIC_CELLS[c.id].terrain === "water") continue;
+    const level = garrisonLevel(totalOf(c));
+    if (level) drawPawnsAt(ctx, c.id, level);
+  }
+}
+
+/** Pawns fade in with the zoom: hidden at the widest view, fully drawn from ~30 px per cell. */
+export const pawnAlphaAt = (cellPx: number) => Math.max(0, Math.min(1, (cellPx - 17) / 12));
+
+/** Two small crossed swords: the mark of a contested cell. */
+function crossedSwords(ctx: Ctx, x: number, y: number, s: number, px: number) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.lineCap = "round";
+  for (const dir of [1, -1]) {
+    ctx.save();
+    ctx.rotate((dir * Math.PI) / 4);
+    // blade
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 0.62);
+    ctx.lineTo(s * 0.09, -s * 0.5);
+    ctx.lineTo(s * 0.09, s * 0.22);
+    ctx.lineTo(-s * 0.09, s * 0.22);
+    ctx.lineTo(-s * 0.09, -s * 0.5);
+    ctx.closePath();
+    ctx.fillStyle = "#e9e2d0";
+    ctx.fill();
+    ctx.lineWidth = Math.max(0.7, 0.8 * px);
+    ctx.strokeStyle = rgba(INK, 0.95);
+    ctx.stroke();
+    // guard and grip
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.26, s * 0.24);
+    ctx.lineTo(s * 0.26, s * 0.24);
+    ctx.lineWidth = Math.max(1.4, 1.5 * px);
+    ctx.strokeStyle = BLOOD;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, s * 0.26);
+    ctx.lineTo(0, s * 0.5);
+    ctx.lineWidth = Math.max(1.2, 1.3 * px);
+    ctx.strokeStyle = rgba(INK, 0.95);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 /** Every edge of the playable cells: the discreet grid. */
 let gridPath: Path2D | null = null;
 function playableGrid(): Path2D {
@@ -559,10 +661,7 @@ export interface OverlayInput {
   scale: number;
 }
 
-const compact = (n: number) => (n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
-/** Contested cells pulse gently: 0.45 → 1 alpha, period ~1.5 s. */
-export const pulseAt = (t: number) => 0.45 + 0.55 * (0.5 + 0.5 * Math.sin((t / 1000) * Math.PI * 1.3));
 
 /**
  * Draws the overlay. With `only`, per-cell marks are limited to those cells
@@ -573,7 +672,6 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
   const px = 1 / o.scale; // one screen pixel in world units
   const cellPx = CELL * o.scale;
   const pick = (ids: number[]) => (only ? ids.filter((i) => only.has(i)) : ids);
-  const pulse = pulseAt(t);
 
   // the grid: only when zoomed in (hover adds its own local grid below)
   const gAlpha = gridAlphaAt(cellPx);
@@ -591,25 +689,19 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
     ctx.fill(index.veil, "evenodd");
   }
 
-  const contested = pick(index.contested);
-  if (contested.length) {
-    ctx.save();
-    ctx.setLineDash([2.2, 2.6]);
-    ctx.lineWidth = Math.max(1.6, 1.4 * px);
-    ctx.strokeStyle = rgba(BLOOD, pulse);
-    ctx.beginPath();
-    for (const id of contested) ctx.rect(cx(id % GRID_W) + 2.5, cy(Math.floor(id / GRID_W)) + 2.5, CELL - 5, CELL - 5);
-    ctx.stroke();
-    ctx.restore();
-  }
-
+  // my cells: a thin gold liseré
   const mine = pick(index.mine);
   if (mine.length) {
     ctx.beginPath();
     ctx.strokeStyle = GOLD;
-    ctx.lineWidth = Math.max(1.8, 1.5 * px);
-    for (const id of mine) ctx.rect(cx(id % GRID_W) + 1, cy(Math.floor(id / GRID_W)) + 1, CELL - 2, CELL - 2);
+    ctx.lineWidth = Math.max(1.3, 1.2 * px);
+    for (const id of mine) ctx.rect(cx(id % GRID_W) + 1.2, cy(Math.floor(id / GRID_W)) + 1.2, CELL - 2.4, CELL - 2.4);
     ctx.stroke();
+  }
+
+  // contested cells: two small crossed swords in the upper corner
+  for (const id of pick(index.contested)) {
+    crossedSwords(ctx, cx(id % GRID_W) + CELL - 8, cy(Math.floor(id / GRID_W)) + 8, 12, px);
   }
 
   for (const e of index.events) {
@@ -653,42 +745,26 @@ export function drawOverlay(ctx: Ctx, o: OverlayInput, t: number, only?: Set<num
     ctx.fillText(when, x + w / 2, ly + 19);
   }
 
-  // wet ink: my numbers, glossy while fresh, drying over the cooldown
-  if (cellPx >= 18 && mine.length) {
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+  // wet ink: soldiers just placed are redrawn in fresh, glossy iron-gall ink that dries in 1 h
+  const pAlpha = pawnAlphaAt(cellPx);
+  if (pAlpha > 0 && mine.length) {
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
     for (const id of mine) {
       const c = cells[id];
       const wet = c.wetUntil && c.wetUntil > now ? (c.wetUntil - now) / (COOLDOWN_MINUTES * 60_000) : 0;
-      if (wet <= 0 && cellPx < 34) continue;
-      const x = cx(id % GRID_W) + CELL / 2;
-      const y = cy(Math.floor(id / GRID_W)) + CELL / 2;
-      const txt = compact(c.mine);
-      ctx.font = `${wet > 0 ? 700 : 400} 12px ${fonts.fell}`;
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = rgba(PARCH, 0.85);
-      ctx.strokeText(txt, x, y);
-      if (wet > 0) {
-        ctx.shadowColor = `rgba(20,30,70,${0.6 * wet})`;
-        ctx.shadowBlur = 4 * wet;
-        // fresh iron-gall ink is blue-black, it browns as it dries
-        const r = Math.round(18 + (42 - 18) * (1 - wet));
-        const g = Math.round(22 + (31 - 22) * (1 - wet));
-        const b = Math.round(58 + (20 - 58) * (1 - wet));
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
-        ctx.fillText(txt, x, y);
-        ctx.shadowBlur = 0;
-        ctx.shadowColor = "transparent";
-        ctx.fillStyle = `rgba(255,255,255,${0.55 * wet})`;
-        ctx.fillText(txt, x - 0.5, y - 0.7);
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
-        ctx.globalAlpha = 0.5;
-        ctx.fillText(txt, x, y);
-        ctx.globalAlpha = 1;
-      } else {
-        ctx.fillStyle = rgba(INK, 0.85);
-        ctx.fillText(txt, x, y);
-      }
+      if (wet <= 0) continue;
+      const level = garrisonLevel(totalOf(c)) || 1;
+      ctx.globalAlpha = pAlpha;
+      ctx.shadowColor = `rgba(20,30,70,${0.55 * wet})`;
+      ctx.shadowBlur = 3 * wet;
+      ctx.strokeStyle = `rgb(${Math.round(18 + 24 * (1 - wet))},${Math.round(22 + 9 * (1 - wet))},${Math.round(58 - 38 * (1 - wet))})`;
+      ctx.lineWidth = 1.1 + 0.5 * wet;
+      ctx.fillStyle = "rgba(240,230,205,0.95)";
+      drawPawnsAt(ctx, id, level);
+      ctx.shadowBlur = 0;
+      ctx.shadowColor = "transparent";
+      ctx.globalAlpha = 1;
     }
   }
 

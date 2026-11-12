@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BUY_URL, COOLDOWN_MINUTES, MAX_FORCE_PER_CELL, VETERAN_MAX_DAYS } from "@config/game";
 import { useWalletModal } from "@/components/wallet/WalletModal";
+import { Divider, Lore } from "@/components/Ornaments";
 import { FACTION_BY_ID } from "@/lib/factions";
 import { STATIC_CELLS, cellLabel } from "@/lib/map/layout";
 import {
@@ -141,7 +142,8 @@ export function CellPanel({
   if (sc.region && !sc.baseOf) tags.push(FACTION_BY_ID[sc.region].homeland);
 
   return (
-    <section className="mt-5 border-t border-gold/25 pt-4">
+    <section>
+      <Divider />
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="text-[10px] font-medium uppercase tracking-wider text-parchment/50">Cell</div>
@@ -298,9 +300,8 @@ export function SpectatorCard() {
   return (
     <section>
       <h2 className="font-display text-sm font-semibold tracking-[0.18em] text-gold">SPECTATOR</h2>
-      <p className="mt-2 text-sm text-parchment/70">
-        You are watching the war. Tap a cell to see which Banners hold it and with what force.
-      </p>
+      <Lore className="mt-3">You are watching the war from the hill, while the five Banners bleed for every field.</Lore>
+      <p className="clear-left mt-2 text-xs text-parchment/55">Tap a cell to see who holds it and with what force.</p>
       <button
         onClick={open}
         className="mt-4 w-full rounded-md bg-gold py-2 text-sm font-semibold text-charcoal transition hover:brightness-110"
@@ -316,7 +317,7 @@ export function ChooseBannerCard({ soldiers }: { soldiers: number }) {
   return (
     <section>
       <h2 className="font-display text-sm font-semibold tracking-[0.18em] text-gold">NO BANNER YET</h2>
-      <p className="mt-2 text-sm text-parchment/70">Swear your oath to one of the five Banners to march on the map.</p>
+      <Lore className="mt-3">Swear your oath to one of the five Banners, and its colours will march with you across the map.</Lore>
       <Link
         href="/join"
         className="mt-4 block w-full rounded-md bg-gold py-2 text-center text-sm font-semibold text-charcoal transition hover:brightness-110"
@@ -348,7 +349,8 @@ export function RecruitNotice() {
 export function HomelandCard({ factionId }: { factionId: PlayerState["faction"] }) {
   const f = FACTION_BY_ID[factionId];
   return (
-    <section className="mt-5 border-t border-gold/25 pt-4">
+    <section>
+      <Divider />
       <p className="text-sm text-parchment/60">Tap a cell to inspect it, deploy or withdraw.</p>
       <div className="mt-4 flex items-center gap-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}

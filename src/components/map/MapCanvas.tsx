@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { GRID_W } from "@config/game";
 import { FACTIONS, FACTION_BY_ID, type FactionId } from "@/lib/factions";
-import type { CellState, GameEvent } from "@/lib/map/state";
+import { rankedForces, type CellState, type GameEvent } from "@/lib/map/state";
+import { STATIC_CELLS, cellLabel } from "@/lib/map/layout";
 import {
   CELL,
   CHARCOAL,
@@ -11,7 +12,10 @@ import {
   WORLD_W,
   buildOverlayIndex,
   buildTerritoryGeometry,
+  drawPawnLayer,
   ownersKey,
+  pawnAlphaAt,
+  pawnsKey,
   cx,
   cy,
   diffAnimations,
@@ -48,8 +52,6 @@ interface View {
 const MAX_ZOOM_CELL_PX = 140;
 /** Screen strip kept clear at the top of the map, under the filter bar, when the whole map is shown. */
 const TOP_INSET = 52;
-/** Contested cells pulse at this rate — only those cells are redrawn. */
-const PULSE_MS = 70;
 /** Wet ink dries and event countdowns tick: a full redraw this often, no more. */
 const SLOW_TICK_MS = 30_000;
 /** Margin around a cell repainted with it (selection ticks, dotted borders). */
@@ -85,7 +87,7 @@ interface RenderStats {
  *  - the territory layer is a second cached canvas, repainted only for cells that changed;
  *  - the screen canvas is recomposed only when something changes (data, pan, zoom, hover,
  *    selection, filter) — never in a permanent loop;
- *  - animations (deploy/conquest/retreat, contested pulse) redraw only their own cells,
+ *  - animations (deploy/conquest/retreat) redraw only their own cells,
  *    stop when they end, and pause while the tab is hidden.
  */
 export default function MapCanvas(props: Props) {
@@ -93,6 +95,9 @@ export default function MapCanvas(props: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgRef = useRef<HTMLCanvasElement | null>(null);
   const terrRef = useRef<HTMLCanvasElement | null>(null);
+  const pawnRef = useRef<HTMLCanvasElement | null>(null);
+  const pawnKeyRef = useRef("");
+  const tipRef = useRef<HTMLDivElement>(null);
   const resRef = useRef(2);
   const fontsRef = useRef<Fonts | null>(null);
   const crestsRef = useRef<Partial<Record<FactionId, HTMLImageElement>>>({});
@@ -143,11 +148,17 @@ export default function MapCanvas(props: Props) {
     ctx.globalCompositeOperation = "multiply";
     ctx.drawImage(terr, 0, 0, WORLD_W, WORLD_H);
     ctx.globalCompositeOperation = "source-over";
+    const pa = pawnAlphaAt(CELL * v.s);
+    if (pa > 0 && pawnRef.current) {
+      ctx.globalAlpha = pa;
+      ctx.drawImage(pawnRef.current, 0, 0, WORLD_W, WORLD_H);
+      ctx.globalAlpha = 1;
+    }
     animsRef.current = drawAnimations(ctx, animsRef.current, t);
     drawOverlay(ctx, overlayInput(Date.now()), t);
   };
 
-  /** Repaints only the given cells (plus a small margin): used by the pulse and the animations. */
+  /** Repaints only the given cells (plus a small margin): used by hover and the animations. */
   const renderRegion = (ctx: CanvasRenderingContext2D, ids: Set<number>, t: number) => {
     const bg = bgRef.current!;
     const terr = terrRef.current!;
@@ -175,6 +186,12 @@ export default function MapCanvas(props: Props) {
       ctx.globalCompositeOperation = "multiply";
       ctx.drawImage(terr, x * R, y * R, w * R, w * R, x, y, w, w);
       ctx.globalCompositeOperation = "source-over";
+      const pa = pawnAlphaAt(CELL * v.s);
+      if (pa > 0 && pawnRef.current) {
+        ctx.globalAlpha = pa;
+        ctx.drawImage(pawnRef.current, x * R, y * R, w * R, w * R, x, y, w, w);
+        ctx.globalAlpha = 1;
+      }
     }
     animsRef.current = drawAnimations(ctx, animsRef.current, t);
     drawOverlay(ctx, overlayInput(Date.now()), t, touched);
@@ -303,8 +320,12 @@ export default function MapCanvas(props: Props) {
       const terr = document.createElement("canvas");
       terr.width = bg.width;
       terr.height = bg.height;
+      const pawnsCanvas = document.createElement("canvas");
+      pawnsCanvas.width = bg.width;
+      pawnsCanvas.height = bg.height;
       bgRef.current = bg;
       terrRef.current = terr;
+      pawnRef.current = pawnsCanvas;
       setReady(true);
     })();
     return () => {
@@ -324,6 +345,12 @@ export default function MapCanvas(props: Props) {
       drawTerritory(terrRef.current, resRef.current, geoRef.current);
       statsRef.current.territoryCells = geoRef.current.zones.length;
       statsRef.current.geometryBuilds = (statsRef.current.geometryBuilds ?? 0) + 1;
+    }
+    // garrison pawns: rebuilt only when an owner or a garrison level changes
+    const pk = pawnsKey(props.cells);
+    if (pk !== pawnKeyRef.current && pawnRef.current) {
+      drawPawnLayer(pawnRef.current, resRef.current, props.cells);
+      pawnKeyRef.current = pk;
     }
     if (prev && prev !== props.cells) {
       if (!reducedMotion()) {
@@ -348,39 +375,24 @@ export default function MapCanvas(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.selectedId]);
 
-  // --- slow clocks: contested pulse (only those cells), wet ink & countdowns ----
+  // --- slow clock: wet ink dries and countdowns tick (no permanent animation) ----
   useEffect(() => {
     if (!ready) return;
     const sc = sched.current;
-    let pulseTimer: ReturnType<typeof setTimeout> | null = null;
-    const pulse = () => {
-      pulseTimer = null;
-      if (document.hidden || reducedMotion()) return;
-      const ids = indexRef.current.contested;
-      if (ids.length) invalidate(ids);
-      pulseTimer = setTimeout(pulse, PULSE_MS);
-    };
     const slow = setInterval(() => {
       if (!document.hidden && (indexRef.current.mine.length || indexRef.current.events.length)) invalidate();
     }, SLOW_TICK_MS);
     const onVisibility = () => {
       if (document.hidden) {
-        if (pulseTimer) clearTimeout(pulseTimer);
-        pulseTimer = null;
         cancelAnimationFrame(sc.raf);
         sc.raf = 0;
-      } else {
-        invalidate();
-        if (!pulseTimer) pulse();
-      }
+      } else invalidate();
     };
     document.addEventListener("visibilitychange", onVisibility);
-    pulse();
     if (process.env.NODE_ENV !== "production") {
       (window as unknown as { __wgRender: RenderStats }).__wgRender = statsRef.current;
     }
     return () => {
-      if (pulseTimer) clearTimeout(pulseTimer);
       clearInterval(slow);
       document.removeEventListener("visibilitychange", onVisibility);
       cancelAnimationFrame(sc.raf);
@@ -424,12 +436,65 @@ export default function MapCanvas(props: Props) {
       const v = viewRef.current;
       return worldToCell((x - v.tx) / v.s, (y - v.ty) / v.s);
     };
+    const tip = tipRef.current;
+    const fmt = (n: number) => n.toLocaleString("en-US");
+    const fillTip = (id: number | null) => {
+      if (!tip) return;
+      if (id === null || STATIC_CELLS[id].terrain === "water") {
+        tip.style.display = "none";
+        return;
+      }
+      const c = propsRef.current.cells[id];
+      tip.replaceChildren();
+      const head = document.createElement("div");
+      head.className = "font-mono text-[11px] text-gold";
+      head.textContent = cellLabel(id);
+      tip.append(head);
+      const ranked = c ? rankedForces(c) : [];
+      if (!ranked.length) {
+        const none = document.createElement("div");
+        none.className = "font-fell italic text-parchment/70";
+        none.textContent = "Unclaimed";
+        tip.append(none);
+      }
+      for (const r of ranked) {
+        const row = document.createElement("div");
+        row.className = "flex justify-between gap-3";
+        // a colour swatch + the name in clear text: readable for every Banner colour
+        const name = document.createElement("span");
+        name.className = "flex items-center gap-1.5";
+        const dot = document.createElement("i");
+        dot.className = "inline-block h-2 w-2 rounded-full ring-1 ring-parchment/40";
+        dot.style.background = FACTION_BY_ID[r.faction].color;
+        name.append(dot, FACTION_BY_ID[r.faction].name);
+        const val = document.createElement("span");
+        val.className = "font-mono text-parchment";
+        val.textContent = fmt(r.force);
+        row.append(name, val);
+        tip.append(row);
+      }
+      if (c && c.mine > 0) {
+        const mine = document.createElement("div");
+        mine.className = "mt-0.5 border-t border-gold/25 pt-0.5 text-gold";
+        mine.textContent = `Mine: ${fmt(c.mine)}`;
+        tip.append(mine);
+      }
+      tip.style.display = "block";
+    };
+    const placeTip = (x: number, y: number) => {
+      if (!tip || tip.style.display === "none") return;
+      const { w } = sizeRef.current;
+      const left = x + 16 + tip.offsetWidth > w ? x - 12 - tip.offsetWidth : x + 16;
+      tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(y + 14)}px)`;
+    };
+
     const pinchState = () => {
       const [a, b] = [...pointers.values()];
       return { dist: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
     };
 
     const down = (e: PointerEvent) => {
+      fillTip(null); // dragging or touching: no tooltip
       canvas.setPointerCapture(e.pointerId);
       const p = local(e);
       pointers.set(e.pointerId, p);
@@ -447,9 +512,11 @@ export default function MapCanvas(props: Props) {
           if (h !== hoverRef.current) {
             const old = hoverRef.current;
             hoverRef.current = h;
+            fillTip(h);
             // hover only touches the small grid around the old and the new cell
             invalidate([...hoverArea(old), ...hoverArea(h)]);
           }
+          placeTip(p.x, p.y);
         }
         return;
       }
@@ -478,6 +545,7 @@ export default function MapCanvas(props: Props) {
       if (pointers.size === 0) tap = null;
     };
     const leave = () => {
+      fillTip(null);
       if (hoverRef.current !== null) {
         const old = hoverRef.current;
         hoverRef.current = null;
@@ -522,12 +590,19 @@ export default function MapCanvas(props: Props) {
         aria-label="War map of the five Banners"
         role="img"
       />
+      {/* exact numbers, on hover only (desktop) */}
+      <div
+        ref={tipRef}
+        style={{ display: "none" }}
+        className="pointer-events-none absolute left-0 top-0 z-20 min-w-[150px] rounded-md border border-gold/40 bg-charcoal/95 px-2.5 py-1.5 text-[12px] leading-snug text-parchment/85 shadow-xl"
+        role="tooltip"
+      />
       {!ready && (
         <div className="absolute inset-0 grid place-items-center font-fell text-lg italic text-parchment/70">
           Unrolling the map…
         </div>
       )}
-      <div className="absolute bottom-4 right-4 z-10 hidden flex-col overflow-hidden rounded-md border border-gold/40 bg-charcoal/85 text-parchment shadow-lg md:flex">
+      <div className="absolute bottom-5 right-[68px] z-10 hidden flex-col overflow-hidden rounded-md border border-gold/40 bg-charcoal/85 text-parchment shadow-lg md:flex">
         <button className="h-9 w-9 text-lg hover:bg-gold/15" onClick={() => zoomBy(1.4)} aria-label="Zoom in">
           +
         </button>

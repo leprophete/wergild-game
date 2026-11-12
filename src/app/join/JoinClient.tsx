@@ -8,6 +8,7 @@ import type { BannerStatus } from "@/lib/game/types";
 import { useSession } from "@/components/wallet/SessionProvider";
 import { useWalletModal } from "@/components/wallet/WalletModal";
 import { RecruitNotice } from "@/components/map/SidePanel";
+import { Lore } from "@/components/Ornaments";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
@@ -63,9 +64,9 @@ export default function JoinClient() {
     <div>
       <div className="text-center">
         <h1 className="font-display text-2xl font-semibold tracking-[0.2em] text-gold md:text-3xl">CHOOSE YOUR BANNER</h1>
-        <p className="mx-auto mt-2 max-w-xl font-fell text-lg italic text-parchment/70">
+        <Lore className="mx-auto mt-3 max-w-xl text-left text-[17px]">
           Five Banners hang in the hall. Swear your oath to one, and march under it until the Knell.
-        </p>
+        </Lore>
         {!signedIn && status !== "loading" && (
           <button onClick={open} className="mt-5 rounded-md bg-gold px-5 py-2 text-sm font-semibold text-charcoal hover:brightness-110">
             Connect wallet to swear

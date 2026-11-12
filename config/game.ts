@@ -23,6 +23,11 @@ export const BASE_CAMP_SIZE = 2;
 // Rule 5 — Control: a cell is "contested" when the top two Banners are within this gap.
 export const CONTESTED_GAP_PCT = 10;
 
+// Map — garrison strength drawn as quill pawns (total force on the cell):
+// below MEDIUM = 1 pawn (weak), from MEDIUM = 2 pawns, from STRONG = 3 pawns.
+export const GARRISON_MEDIUM = 400;
+export const GARRISON_STRONG = 2000;
+
 // Rule 7 — Score (hourly, on the full UTC hour)
 export const CELL_POINTS = 1;
 export const BONUS_CELL_POINTS = 3;

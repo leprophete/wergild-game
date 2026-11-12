@@ -37,9 +37,9 @@ export function TopBar({
   children?: React.ReactNode;
 }) {
   return (
-    <header className="relative z-30 flex shrink-0 flex-col border-b border-gold/40 bg-charcoal md:h-[150px] md:flex-row md:items-start">
+    <header className="relative z-30 flex shrink-0 flex-col border-b border-gold/40 bg-charcoal lg:h-[150px] lg:flex-row lg:items-start">
       <div className="pointer-events-none absolute inset-x-0 bottom-[3px] h-px bg-gold/20" />
-      <div className="flex h-12 min-w-0 items-center gap-3 px-3 max-md:pr-36 md:h-14 md:max-w-[calc(50%-300px)] md:px-5 2xl:max-w-[calc(50%-480px)]">
+      <div className="flex h-12 min-w-0 items-center gap-3 px-3 max-md:pr-36 md:px-5 lg:h-14 lg:max-w-[calc(50%-300px)] 2xl:max-w-[calc(50%-480px)]">
         <Link href="/map" className="shrink-0 font-display text-lg font-bold tracking-[0.12em] text-gold md:text-xl">
           $WERGILD
         </Link>
@@ -56,7 +56,7 @@ export function TopBar({
       </div>
       <ConnectButton className="absolute right-3 top-2 z-10 md:right-5 md:top-3" />
       {/* banner rail: its own row on mobile, centred in the header on desktop */}
-      <div className="relative h-[108px] md:absolute md:inset-x-0 md:top-0 md:h-full md:pointer-events-none">{children}</div>
+      <div className="relative h-[108px] md:h-[146px] lg:pointer-events-none lg:absolute lg:inset-x-0 lg:top-0 lg:h-full">{children}</div>
     </header>
   );
 }

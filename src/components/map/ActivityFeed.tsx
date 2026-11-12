@@ -14,7 +14,7 @@ const ago = (ms: number) => {
 export function ActivityFeed({ entries }: { entries: FeedEntry[] }) {
   const now = useNow(30_000);
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[min(80vw,320px)]">
+    <div className="pointer-events-none absolute bottom-4 left-11 z-10 max-w-[min(72vw,320px)] md:left-[68px]">
       <ul className="space-y-0.5 rounded-sm bg-parchment/80 px-3 py-2 shadow-[0_2px_10px_rgba(0,0,0,0.5)] backdrop-blur-[1px]">
         {entries.slice(0, 4).map((e, i) => (
           <li

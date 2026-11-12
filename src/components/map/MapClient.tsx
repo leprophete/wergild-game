@@ -16,6 +16,7 @@ import { CellPanel, ChooseBannerCard, HomelandCard, MyArmy, SpectatorCard } from
 import { useSession } from "@/components/wallet/SessionProvider";
 import { ActivityFeed } from "./ActivityFeed";
 import { MapFilters } from "./MapFilters";
+import { MapFrame, PanelCrown } from "@/components/Ornaments";
 
 const roman = (n: number) => (n === 0 ? "0" : (["", "I", "II", "III", "IV", "V"][n] ?? String(n)));
 
@@ -215,6 +216,7 @@ export default function MapClient() {
       : `Live · Season ${roman(world.season.number)} · updates in real time${status === "offline" ? " (reconnecting…)" : ""}.`;
   const panel = (
     <>
+      <PanelCrown className="-mt-1 mb-4" />
       {me ? (
         <MyArmy player={me} deployed={deployed} />
       ) : account ? (
@@ -244,6 +246,7 @@ export default function MapClient() {
             seasonSub={`Season ${roman(world.season.number)} of $WERGILD · the war of the five Banners`}
             onSelect={select}
           />
+          <MapFrame />
           <MapFilters
             value={filter}
             onToggle={(f) => setFilter((cur) => (cur === f ? "all" : f))}
