@@ -47,7 +47,7 @@ export default function RankingClient() {
     <div className="mx-auto max-w-4xl overflow-x-clip">
       <IlluminatedPage>
         {!data ? (
-          <p className="py-10 text-center font-fell text-lg italic text-ink/70">
+          <p className="py-10 text-center font-fell text-lg italic text-ink/80">
             {failed ? "The heralds could not be reached. Try again in a moment." : "The heralds count the banners…"}
           </p>
         ) : (
@@ -69,7 +69,7 @@ export default function RankingClient() {
                   return (
                     <li
                       key={f.id}
-                      className={`grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-[1.6cqw] border-b border-ink/15 py-[0.9cqw] ${
+                      className={`grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-[1.6cqw] border-b border-ink/25 py-[0.9cqw] ${
                         mine ? "bg-gold/20" : ""
                       }`}
                     >
@@ -86,7 +86,7 @@ export default function RankingClient() {
                       </Link>
                       <span className="text-right font-mono text-[clamp(12px,2.2cqw,17px)] text-ink">
                         {fmt(f.points)}
-                        <span className="block text-[clamp(9px,1.5cqw,11px)] text-ink/55">+{fmt(f.lastHour)}/h</span>
+                        <span className="block text-[clamp(9px,1.5cqw,11px)] text-ink/75">+{fmt(f.lastHour)}/h</span>
                       </span>
                     </li>
                   );
@@ -98,11 +98,11 @@ export default function RankingClient() {
               <h2 id="rk-renown" className="font-display text-[clamp(11px,1.8cqw,14px)] font-semibold tracking-[0.2em] text-ink">
                 RENOWN
               </h2>
-              <p className="mt-0.5 font-fell text-[clamp(12px,1.9cqw,15px)] italic text-ink/70">
+              <p className="mt-0.5 font-fell text-[clamp(12px,1.9cqw,15px)] italic text-ink/80">
                 A cell&apos;s points are shared among its holders, pro rata to their force there.
               </p>
               {data.players.length === 0 ? (
-                <p className="mt-3 font-fell italic text-ink/70">No deed has been sung yet this season. The first hour will tell.</p>
+                <p className="mt-3 font-fell italic text-ink/80">No deed has been sung yet this season. The first hour will tell.</p>
               ) : (
                 <ol className="mt-1.5">
                   {data.players.map((p) => (
@@ -120,7 +120,7 @@ export default function RankingClient() {
               )}
             </section>
 
-            <p className="ml-[3cqw] mt-[3cqw] text-[clamp(10px,1.6cqw,12px)] leading-snug text-ink/60">
+            <p className="ml-[3cqw] mt-[3cqw] text-[clamp(10px,1.6cqw,12px)] leading-snug text-ink/80">
               Scored every full hour (UTC), on each player&apos;s lowest force of the hour: 1 point per cell held (base camps
               excepted), 3 per watchtower, ×3 inside the Tithe.
               {data.lastTick && (
@@ -150,7 +150,7 @@ function IlluminatedPage({ children }: { children: React.ReactNode }) {
         {/* parchment, inside the frame's rails */}
         <div
           aria-hidden
-          className="absolute bottom-[3.2cqw] left-[5.6cqw] right-[4.9cqw] top-[8.9cqw] rounded-[2px] bg-[radial-gradient(ellipse_at_45%_35%,#efe3c6_0%,#e6d8b8_55%,#cdb88d_100%)] shadow-[inset_0_0_40px_rgba(110,80,40,0.35)]"
+          className="grimoire-page absolute bottom-[3.2cqw] left-[5.6cqw] right-[4.9cqw] top-[8.9cqw] rounded-[2px]"
         />
         {/* gold rules closing the page (under the frame, so its vines run over them): top, from the
             cartouche to the corner, and right, down to the gilded post of the bottom-right corner */}
@@ -200,7 +200,7 @@ function Rank({ n, lead }: { n: number; lead: boolean }) {
     );
   }
   return (
-    <span className="grid w-[clamp(30px,6cqw,46px)] place-items-center font-display text-[clamp(13px,2.2cqw,17px)] text-ink/70">
+    <span className="grid w-[clamp(30px,6cqw,46px)] place-items-center font-display text-[clamp(13px,2.2cqw,17px)] text-ink/80">
       {n}
     </span>
   );
@@ -210,11 +210,11 @@ function PlayerRow({ p, mine }: { p: RankingResponse["players"][number]; mine: b
   const fac = p.faction ? FACTION_BY_ID[p.faction] : null;
   return (
     <li
-      className={`grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-[1.6cqw] border-b border-ink/15 py-[0.7cqw] ${
+      className={`grid grid-cols-[auto_auto_1fr_auto] items-center gap-x-[1.6cqw] border-b border-ink/25 py-[0.7cqw] ${
         mine ? "bg-gold/20" : ""
       }`}
     >
-      <span className="w-[clamp(30px,6cqw,46px)] text-center font-mono text-[clamp(11px,1.9cqw,15px)] text-ink/60">
+      <span className="w-[clamp(30px,6cqw,46px)] text-center font-mono text-[clamp(11px,1.9cqw,15px)] text-ink/75">
         {p.rank > 0 ? p.rank : "—"}
       </span>
       <span className="flex w-[clamp(24px,4.8cqw,38px)] justify-center">
