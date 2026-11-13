@@ -14,6 +14,8 @@ import { filterMatches, type MapFilter } from "@/lib/map/render";
 import { supabaseConfigured } from "@/lib/supabase/client";
 import MapCanvas, { type MapApi } from "./MapCanvas";
 import { MapTools } from "./MapTools";
+import { MapIlluminations } from "./Illuminations";
+import { FRAMED_EXTENT, RIDER_RECT } from "@/lib/map/illuminations";
 import { CaptureDialog } from "./CaptureDialog";
 import { GuideCard, canDeployOn, deployTargets, useFirstDeployGuide } from "./Guide";
 import { play } from "@/lib/sound";
@@ -304,9 +306,20 @@ export default function MapClient() {
             seasonSub={`Season ${roman(world.season.number)} of $WERGILD · the war of the five Banners`}
             onSelect={select}
             onApi={setMapApi}
+            overlay={
+              <MapIlluminations
+                title={world.season.name}
+                sub={`Season ${roman(world.season.number)} of $WERGILD · the war of the five Banners`}
+              />
+            }
+            extent={FRAMED_EXTENT}
+            fadeRect={RIDER_RECT}
             highlight={guide.step === "pick" || guide.step === "deploy" ? targets : undefined}
           />
-          <MapFrame />
+          {/* phones: the thin gilded frame instead of the illuminated one (no rider) */}
+          <div className="md:hidden">
+            <MapFrame />
+          </div>
           <MapFilters
             value={filter}
             onToggle={(f) => setFilter((cur) => (cur === f ? "all" : f))}

@@ -105,6 +105,14 @@ body {
 }
 .grimoire-hint { animation: grimoire-hint 2.6s ease-in-out infinite; }
 
+/* The rider on the map fades while the mouse is over him (pointer-events: none on him). */
+.map-illuminations .map-rider {
+  transition: opacity 0.25s ease;
+}
+.map-illuminations[data-fade="1"] .map-rider {
+  opacity: 0.25;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .banner-sway,
   .feed-new {

@@ -48,7 +48,19 @@ interface Props {
   highlight?: number[];
   /** Hands the parent a way to draw the whole map elsewhere (the capture for X). */
   onApi?: (api: MapApi) => void;
+  /**
+   * Illuminations laid over the map in WORLD units (the frame, the rider): they follow the
+   * pan and zoom, never catch the pointer. Shown from the md breakpoint only.
+   */
+  overlay?: React.ReactNode;
+  /** World area the view fits and pans within when the overlay is shown (the frame's extent). */
+  extent?: WorldRect;
+  /** While the mouse is over this world area, the overlay gets data-fade (the rider fades). */
+  fadeRect?: WorldRect;
 }
+
+/** The overlay is shown, and the view framed, from this width up (Tailwind md). */
+const FRAMED_MIN_WIDTH = 768;
 
 export interface MapApi {
   /** Draws the whole world at `s` px per world unit, origin at the context's current transform. */
@@ -127,6 +139,17 @@ export default function MapCanvas(props: Props) {
   propsRef.current = props;
   /** The home preview has no filter bar to keep clear. */
   const inset = () => (propsRef.current.preview ? 0 : TOP_INSET_PX);
+  const layerRef = useRef<HTMLDivElement>(null);
+  const framedRef = useRef(false);
+  /** The world rectangle the view fits and pans within: the frame on wide screens, else the map. */
+  const extent = (): WorldRect =>
+    framedRef.current && propsRef.current.extent ? propsRef.current.extent : { x0: 0, y0: 0, x1: WORLD_W, y1: WORLD_H };
+  const syncLayer = () => {
+    const el = layerRef.current;
+    if (!el) return;
+    const v = viewRef.current;
+    el.style.transform = `translate(${v.tx}px, ${v.ty}px) scale(${v.s})`;
+  };
   const [ready, setReady] = useState(false);
   const pulseRef = useRef(0);
 
@@ -180,7 +203,8 @@ export default function MapCanvas(props: Props) {
       ctx.globalCompositeOperation = "source-over";
     }
     // towers, names, cartouche, compass: vector, redrawn at this zoom
-    drawDecor(ctx, decorRef.current!, fontsRef.current!, p.seasonTitle, p.seasonSub);
+    // with the illuminated frame (wide screens) the cartouche and the compass live on the frame
+    drawDecor(ctx, decorRef.current!, fontsRef.current!, p.seasonTitle, p.seasonSub, !(framedRef.current && p.overlay));
   };
 
   const renderFull = (ctx: CanvasRenderingContext2D, t: number) => {
@@ -264,25 +288,31 @@ export default function MapCanvas(props: Props) {
   // --- view helpers ---------------------------------------------------------
   const fitScale = () => {
     const { w, h } = sizeRef.current;
-    return Math.min(w / WORLD_W, (h - inset()) / WORLD_H);
+    const e = extent();
+    return Math.min(w / (e.x1 - e.x0), (h - inset()) / (e.y1 - e.y0));
   };
   /** The closest zoom that stays sharp: the 4× master, stretched at most MAX_STRETCH on this screen. */
   const maxScale = () => Math.min(MAX_ZOOM_CELL_PX / CELL, (LEVEL_RES.l4 * MAX_STRETCH) / sizeRef.current.dpr);
   const clampView = (v: View): View => {
     const { w, h } = sizeRef.current;
+    const e = extent();
     const min = fitScale() * 0.9;
     const max = Math.max(min, maxScale());
     const s = Math.min(max, Math.max(min, v.s));
-    const mw = WORLD_W * s;
-    const mh = WORLD_H * s;
+    const mw = (e.x1 - e.x0) * s;
+    const mh = (e.y1 - e.y0) * s;
     const pad = 40;
-    const tx = mw <= w ? (w - mw) / 2 : Math.min(pad, Math.max(w - mw - pad, v.tx));
-    const ty =
-      mh <= h - inset() ? inset() + (h - inset() - mh) / 2 : Math.min(inset(), Math.max(h - mh - pad, v.ty));
-    return { s, tx, ty };
+    // screen position of the extent's top-left corner, centred when it fits, else kept in reach
+    const sx = mw <= w ? (w - mw) / 2 : Math.min(pad, Math.max(w - mw - pad, v.tx + e.x0 * s));
+    const sy =
+      mh <= h - inset()
+        ? inset() + (h - inset() - mh) / 2
+        : Math.min(inset(), Math.max(h - mh - pad, v.ty + e.y0 * s));
+    return { s, tx: sx - e.x0 * s, ty: sy - e.y0 * s };
   };
   const setView = (v: View) => {
     viewRef.current = clampView(v);
+    syncLayer();
     invalidate();
   };
   const zoomAt = (px: number, py: number, wanted: number) => {
@@ -471,6 +501,9 @@ export default function MapCanvas(props: Props) {
     const canvas = canvasRef.current!;
     const measure = () => {
       const r = wrap.getBoundingClientRect();
+      const framed = !!propsRef.current.extent && window.innerWidth >= FRAMED_MIN_WIDTH;
+      if (framed !== framedRef.current) fittedRef.current = false; // crossing the breakpoint: fit again
+      framedRef.current = framed;
       const dpr = Math.min(MAX_DPR, window.devicePixelRatio || 1);
       sizeRef.current = { w: r.width, h: r.height, dpr };
       canvas.width = Math.round(r.width * dpr);
@@ -589,6 +622,15 @@ export default function MapCanvas(props: Props) {
       const p = local(e);
       if (!pointers.has(e.pointerId)) {
         if (e.pointerType === "mouse") {
+          const fr = propsRef.current.fadeRect;
+          const layer = layerRef.current;
+          if (fr && layer) {
+            const v = viewRef.current;
+            const wx = (p.x - v.tx) / v.s;
+            const wy = (p.y - v.ty) / v.s;
+            const over = wx >= fr.x0 && wx <= fr.x1 && wy >= fr.y0 && wy <= fr.y1;
+            if (over !== (layer.dataset.fade === "1")) layer.dataset.fade = over ? "1" : "0";
+          }
           const h = pickCell(p.x, p.y);
           if (h !== hoverRef.current) {
             const old = hoverRef.current;
@@ -664,6 +706,17 @@ export default function MapCanvas(props: Props) {
 
   return (
     <div ref={wrapRef} className="absolute inset-0 overflow-hidden">
+      {props.overlay && (
+        <div
+          ref={layerRef}
+          aria-hidden
+          data-fade="0"
+          className="map-illuminations pointer-events-none absolute left-0 top-0 z-[4] hidden origin-top-left md:block"
+          style={{ width: WORLD_W, height: WORLD_H }}
+        >
+          {props.overlay}
+        </div>
+      )}
       <canvas
         ref={canvasRef}
         className="block h-full w-full touch-none select-none"
@@ -684,7 +737,7 @@ export default function MapCanvas(props: Props) {
         </div>
       )}
       {!props.preview && (
-      <div className="absolute bottom-5 right-[68px] z-10 hidden flex-col overflow-hidden rounded-md border border-gold/40 bg-charcoal/85 text-parchment shadow-lg md:flex">
+      <div className="absolute right-[68px] top-14 z-10 hidden flex-col overflow-hidden rounded-md border border-gold/40 bg-charcoal/85 text-parchment shadow-lg md:flex">
         <button className="h-9 w-9 text-lg hover:bg-gold/15" onClick={() => zoomBy(1.4)} aria-label="Zoom in">
           +
         </button>

@@ -55,6 +55,8 @@ function ink(ctx: Ctx, width = 0.9, alpha = 0.85) {
 // ---------------------------------------------------------------------------
 export interface Decor {
   rough: Drawable[];
+  /** the cartouche's two rough rectangles, drawn only when the map has no illuminated frame */
+  cartouche: Drawable[];
 }
 
 export function buildDecor(): Decor {
@@ -94,20 +96,28 @@ export function buildDecor(): Decor {
     );
   }
   const { x, y, w, h } = CARTOUCHE;
-  out.push(
+  const cartouche: Drawable[] = [];
+  cartouche.push(
     gen.rectangle(x, y, w, h, { seed: 9001, stroke: INK, strokeWidth: 1.4, fill: "#efe4c8", fillStyle: "solid", roughness: 0.8 }),
     gen.rectangle(x + 4, y + 4, w - 8, h - 8, { seed: 9002, stroke: INK, strokeWidth: 0.6, roughness: 0.8 }),
   );
-  return { rough: out };
+  return { rough: out, cartouche };
 }
 
-export function drawDecor(ctx: Ctx, decor: Decor, fonts: Fonts, seasonTitle: string, seasonSub: string) {
+/**
+ * `corners` = false when the illuminated frame is shown (wide screens): the frame covers the
+ * map's corners, so the cartouche and the compass rose move onto the frame itself (DOM).
+ */
+export function drawDecor(ctx: Ctx, decor: Decor, fonts: Fonts, seasonTitle: string, seasonSub: string, corners = true) {
   const rc = rough.canvas(ctx.canvas);
   for (const d of decor.rough) rc.draw(d);
+  if (corners) for (const d of decor.cartouche) rc.draw(d);
   drawTowerDetails(ctx);
   drawPlaceNames(ctx, fonts);
-  drawCartouche(ctx, fonts, seasonTitle, seasonSub);
-  drawCompass(ctx, fonts);
+  if (corners) {
+    drawCartouche(ctx, fonts, seasonTitle, seasonSub);
+    drawCompass(ctx, fonts);
+  }
 }
 
 function drawTowerDetails(ctx: Ctx) {

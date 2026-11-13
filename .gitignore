@@ -46,3 +46,6 @@ next-env.d.ts
 # devnet test keys (never commit)
 /.devnet/
 /.next-build/
+
+# review captures (not part of the site)
+/screenshots/
