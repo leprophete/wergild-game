@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import MapClient from "@/components/map/MapClient";
+import { MapLoader } from "@/components/map/MapLoader";
 
 export const metadata: Metadata = {
   title: "The Map — $WERGILD",
@@ -7,5 +8,10 @@ export const metadata: Metadata = {
 };
 
 export default function MapPage() {
-  return <MapClient />;
+  return (
+    <>
+      <MapClient />
+      <MapLoader />
+    </>
+  );
 }

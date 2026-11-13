@@ -25,6 +25,7 @@ import { useSession } from "@/components/wallet/SessionProvider";
 import { ActivityFeed } from "./ActivityFeed";
 import { MapFilters } from "./MapFilters";
 import { KnellOverlay, useKnell } from "./KnellOverlay";
+import { signalMapReady } from "./MapLoader";
 import { MapFrame, PanelCrown } from "@/components/Ornaments";
 
 
@@ -219,6 +220,8 @@ export default function MapClient() {
   );
 
   if (!world) {
+    // the map cannot load: let the loading screen go and show why
+    if (status === "offline" || status === "no-season") queueMicrotask(signalMapReady);
     const msg =
       status === "offline"
         ? "The map could not be reached. Retrying…"

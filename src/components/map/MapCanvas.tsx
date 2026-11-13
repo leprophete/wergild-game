@@ -32,6 +32,7 @@ import {
   type TerritoryGeometry,
 } from "@/lib/map/render";
 import { LEVEL_RES, MAX_STRETCH, WorldImagery, type WorldRect } from "@/lib/map/imagery";
+import { signalMapReady } from "./MapLoader";
 
 interface Props {
   cells: CellState[];
@@ -280,6 +281,8 @@ export default function MapCanvas(props: Props) {
     const t0 = performance.now();
     if (s.full) {
       renderFull(ctx, t);
+      // the first real picture of the map: the loading screen may go
+      if (!propsRef.current.preview) signalMapReady();
       statsRef.current.full++;
       statsRef.current.lastFullMs = performance.now() - t0;
     } else if (s.region.size) {
