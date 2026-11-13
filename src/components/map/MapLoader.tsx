@@ -181,8 +181,16 @@ export function MapLoader() {
       ref={rootRef}
       role="status"
       aria-live="polite"
-      className="fixed inset-0 z-[60] overflow-hidden bg-[#c69d63] bg-[url(/ornaments/web/grimoire_paper.webp)] bg-[length:100%_100%]"
+      className="fixed inset-0 z-[60] overflow-hidden bg-[#c9b48a]"
     >
+      {/* the scene behind the raven: the cathedral in the mist above the graveyard
+          (its own painted raven removed by scripts/clean-loader-bg.mjs) */}
+      <img
+        src="/ornaments/web/loader_scene.webp"
+        alt=""
+        draggable={false}
+        className="absolute inset-0 h-full w-full select-none object-cover object-[50%_40%]"
+      />
       <span className="sr-only">Unrolling the map…</span>
       {/* the branch, in the top-right corner; it bends around its base (right end) */}
       <div
@@ -229,7 +237,7 @@ export function MapLoader() {
           />
         </div>
       </div>
-      <p className="absolute bottom-[12vh] left-0 right-0 text-center font-fell text-[clamp(18px,2.4vw,26px)] italic text-ink/80">
+      <p className="absolute bottom-[9vh] left-0 right-0 text-center font-fell text-[clamp(20px,2.6vw,30px)] italic text-parchment [text-shadow:0_2px_6px_rgba(20,12,6,0.95),0_0_18px_rgba(20,12,6,0.8)]">
         Unrolling the map…
       </p>
     </div>
