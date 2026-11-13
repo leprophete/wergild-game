@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import type { CSSProperties, ReactNode } from "react";
+import { IlluminatedInitial } from "./IlluminatedInitial";
 
 /**
  * Gilded ornaments (public/ornaments). They stay discreet: the map and the game
@@ -67,20 +68,19 @@ export function Divider({ className = "" }: { className?: string }) {
 }
 
 /**
- * A lore text opening with an illuminated initial (lettrine): gold capital in a small
- * dark-green frame, like the ornaments. Interface texts and numbers never get one.
+ * A lore text opening with an illuminated initial (lettrine): a burnished-gold capital on a
+ * night-blue field of gold scrolls, with a red band, as in illuminated manuscripts.
+ * Interface texts and numbers never get one.
  */
 export function Lore({ children, className = "", style }: { children: string; className?: string; style?: CSSProperties }): ReactNode {
   const first = children.charAt(0);
   const rest = children.slice(1);
   return (
     <p className={`font-fell text-[15px] italic leading-relaxed text-parchment/75 ${className}`} style={style}>
-      <span
-        aria-hidden
-        className="float-left mr-2 mt-1 grid h-[2.35em] w-[2.35em] place-items-center rounded-[3px] border border-gold/70 bg-[radial-gradient(circle_at_30%_25%,#2f4a3a,#16231b)] font-display text-[1.9em] not-italic leading-none text-gold shadow-[inset_0_0_0_2px_rgba(20,18,16,0.85),inset_0_0_0_3px_rgba(201,162,75,0.35)] [text-shadow:0_1px_0_#2a1f14,0_0_6px_rgba(201,162,75,0.45)]"
-      >
-        {first}
-      </span>
+      <IlluminatedInitial
+        letter={first}
+        className="float-left mb-1 mr-3 mt-1 h-[4.4em] w-[4.4em] drop-shadow-[0_3px_6px_rgba(0,0,0,0.6)]"
+      />
       <span className="sr-only">{first}</span>
       {rest}
     </p>
