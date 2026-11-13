@@ -24,7 +24,7 @@ export function MapIlluminations({ title, sub }: { title: string; sub: string })
         style={{ left: c.cx - c.w / 2, top: c.cy - c.h / 2, width: c.w, height: c.h, borderColor: INK, color: INK }}
       >
         <div className="pointer-events-none absolute inset-[4px] rounded-[2px] border-[0.75px]" style={{ borderColor: INK }} />
-        <div className="font-display text-[19px] font-semibold leading-none tracking-[0.1em]">{title.toUpperCase()}</div>
+        <div className="font-display text-[19px] font-semibold leading-none tracking-[0.1em]">{(title ?? "").toUpperCase()}</div>
         <div className="mt-[6px] font-fell text-[12px] italic leading-none opacity-85">{sub}</div>
       </div>
 
