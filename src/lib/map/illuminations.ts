@@ -12,6 +12,7 @@ import type { WorldRect } from "./imagery";
  *   bottom-right corner, half a cell beyond its outer edge: over 9 sea cells, not one pixel
  *   on a playable cell (checked at full resolution).
  */
+// keep in sync with scripts/gen-sea-surround.mjs (the sea between the map and the frame)
 const FRAME_SCALE = 1.34;
 const FRAME_W = WORLD_W * FRAME_SCALE;
 const FRAME_H = WORLD_H * FRAME_SCALE;

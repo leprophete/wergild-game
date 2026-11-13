@@ -57,6 +57,8 @@ interface Props {
   extent?: WorldRect;
   /** While the mouse is over this world area, the overlay gets data-fade (the rider fades). */
   fadeRect?: WorldRect;
+  /** Drawn under the map, with the overlay only: the sea between the map and its frame. */
+  underlay?: { src: string; rect: WorldRect };
 }
 
 /** The overlay is shown, and the view framed, from this width up (Tailwind md). */
@@ -140,6 +142,7 @@ export default function MapCanvas(props: Props) {
   /** The home preview has no filter bar to keep clear. */
   const inset = () => (propsRef.current.preview ? 0 : TOP_INSET_PX);
   const layerRef = useRef<HTMLDivElement>(null);
+  const underlayRef = useRef<HTMLImageElement | null>(null);
   const framedRef = useRef(false);
   /** The world rectangle the view fits and pans within: the frame on wide screens, else the map. */
   const extent = (): WorldRect =>
@@ -189,6 +192,21 @@ export default function MapCanvas(props: Props) {
     const p = propsRef.current;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
+    // wide screens: the sea runs on from the map to its illuminated frame
+    const under = underlayRef.current;
+    if (framedRef.current && p.underlay && under?.complete && under.naturalWidth) {
+      const r = p.underlay.rect;
+      const w = r.x1 - r.x0;
+      const h = r.y1 - r.y0;
+      // stop under the frame's band: its outer edge is not straight (1–3 % in), so the
+      // rectangle of sea must never peek out around it
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(r.x0 + w * 0.04, r.y0 + h * 0.045, w * 0.92, h * 0.91);
+      ctx.clip();
+      ctx.drawImage(under, r.x0, r.y0, w, h);
+      ctx.restore();
+    }
     imageryRef.current!.draw(ctx, rect, devPx ?? dpr * v.s);
     // watercolour bands: multiply, like pigment on paper (soft by nature: a cached layer)
     const terr = terrRef.current!;
@@ -504,6 +522,14 @@ export default function MapCanvas(props: Props) {
       const framed = !!propsRef.current.extent && window.innerWidth >= FRAMED_MIN_WIDTH;
       if (framed !== framedRef.current) fittedRef.current = false; // crossing the breakpoint: fit again
       framedRef.current = framed;
+      const u = propsRef.current.underlay;
+      if (framed && u && !underlayRef.current) {
+        const img = new Image();
+        img.decoding = "async";
+        img.onload = () => invalidate();
+        img.src = u.src;
+        underlayRef.current = img;
+      }
       const dpr = Math.min(MAX_DPR, window.devicePixelRatio || 1);
       sizeRef.current = { w: r.width, h: r.height, dpr };
       canvas.width = Math.round(r.width * dpr);

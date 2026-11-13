@@ -15,7 +15,7 @@ import { supabaseConfigured } from "@/lib/supabase/client";
 import MapCanvas, { type MapApi } from "./MapCanvas";
 import { MapTools } from "./MapTools";
 import { MapIlluminations } from "./Illuminations";
-import { FRAMED_EXTENT, RIDER_RECT } from "@/lib/map/illuminations";
+import { FRAME_RECT, FRAMED_EXTENT, RIDER_RECT } from "@/lib/map/illuminations";
 import { CaptureDialog } from "./CaptureDialog";
 import { GuideCard, canDeployOn, deployTargets, useFirstDeployGuide } from "./Guide";
 import { play } from "@/lib/sound";
@@ -313,6 +313,7 @@ export default function MapClient() {
               />
             }
             extent={FRAMED_EXTENT}
+            underlay={{ src: "/map/sea-surround.webp", rect: FRAME_RECT }}
             fadeRect={RIDER_RECT}
             highlight={guide.step === "pick" || guide.step === "deploy" ? targets : undefined}
           />
