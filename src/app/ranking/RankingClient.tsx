@@ -309,7 +309,7 @@ function PlayerRow({ p, mine }: { p: RankingResponse["players"][number]; mine: b
 function HangingBanners({ data, myFaction }: { data: RankingResponse; myFaction: string | null }) {
   const max = Math.max(1, ...data.factions.map((f) => f.points));
   return (
-    <section aria-label="Banners by season points" className="relative mx-auto mt-10 max-w-3xl">
+    <section aria-label="Banners by season points" className="relative mx-auto mt-10 max-w-4xl">
       <div className="absolute inset-x-0 top-0 h-[5px] rounded-full bg-gradient-to-r from-transparent via-gold/80 to-transparent" />
       <ol className="flex items-start justify-around">
         {data.factions.map((f, i) => {
@@ -330,7 +330,7 @@ function HangingBanners({ data, myFaction }: { data: RankingResponse; myFaction:
                   src={fac.banner}
                   alt=""
                   draggable={false}
-                  className={`h-[130px] w-auto sm:h-[200px] ${
+                  className={`h-[160px] w-auto sm:h-[270px] ${
                     mine
                       ? "[filter:drop-shadow(0_0_6px_rgba(232,196,104,0.95))_drop-shadow(0_0_14px_rgba(201,162,75,0.7))]"
                       : "drop-shadow-[0_6px_10px_rgba(0,0,0,0.6)]"
