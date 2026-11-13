@@ -42,7 +42,7 @@ export default function RulesPage() {
           <h1 className="font-display text-2xl tracking-[0.2em] text-gold">THE RULES OF THE WAR</h1>
           <p className="mt-1 font-fell text-lg italic text-parchment/70">“Every token has a price in blood.”</p>
         </header>
-        <Lore className="mt-6 text-[17px]">
+        <Lore className="mt-6 text-[18px] lg:-mx-20">
           Hear ye: five Banners fight over one old map. Whoever holds $WERGILD holds soldiers; whoever holds the most land
           when the knell tolls is sung in the Chronicles. No dice are cast, no fortune is told: every outcome is reckoned
           by the same rules, on the server, for all.
