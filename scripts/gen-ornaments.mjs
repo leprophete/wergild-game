@@ -11,6 +11,8 @@ const jobs = [
   ["ranking_frame", { width: 1400 }],
   ["ranking_scribe", { width: 640 }],
   ["dropcap", { width: 256 }],
+  ["chronicle_scroll", { width: 1400 }],
+  ["wax_seal", { width: 360 }],
 ];
 for (const [name, size] of jobs) {
   const info = await sharp(`public/ornaments/${name}.webp`).resize({ ...size, kernel: "lanczos3" }).webp({ quality: 84, alphaQuality: 90, effort: 5 }).toFile(`${out}/${name}.webp`);

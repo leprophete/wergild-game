@@ -62,7 +62,7 @@ export function Divider({ className = "" }: { className?: string }) {
       src="/ornaments/divider_wings.png"
       alt=""
       aria-hidden
-      className={`pointer-events-none mx-auto my-4 block h-auto w-[150px] opacity-70 ${className}`}
+      className={`pointer-events-none clear-both mx-auto my-4 block h-auto w-[150px] opacity-70 ${className}`}
     />
   );
 }
@@ -76,10 +76,10 @@ export function Lore({ children, className = "", style }: { children: string; cl
   const first = children.charAt(0);
   const rest = children.slice(1);
   return (
-    <p className={`font-fell text-[15px] italic leading-relaxed text-parchment/75 ${className}`} style={style}>
+    <p className={`flow-root text-left font-fell text-[15px] italic leading-relaxed text-parchment/75 ${className}`} style={style}>
       <IlluminatedInitial
         letter={first}
-        className="float-left mb-1 mr-3 mt-1 h-[4.4em] w-[4.4em] drop-shadow-[0_3px_6px_rgba(0,0,0,0.6)]"
+        className="float-left mr-1.5 mt-[0.3em] h-[4.55em] w-[4.55em] drop-shadow-[0_3px_6px_rgba(0,0,0,0.6)]"
       />
       <span className="sr-only">{first}</span>
       {rest}

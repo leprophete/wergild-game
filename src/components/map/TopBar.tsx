@@ -10,7 +10,12 @@ import { useNow } from "@/lib/useNow";
 /** Only this span re-renders every second. */
 export function Countdown({ endsAt }: { endsAt: number }) {
   const now = useNow(1000);
-  return <span className="text-parchment/90">{formatRemaining(endsAt - now)}</span>;
+  // the server and the browser tick a second apart: the text may differ at hydration
+  return (
+    <span className="text-parchment/90" suppressHydrationWarning>
+      {formatRemaining(endsAt - now)}
+    </span>
+  );
 }
 
 function formatRemaining(ms: number) {
