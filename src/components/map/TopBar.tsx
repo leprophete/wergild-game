@@ -4,6 +4,7 @@ import { roman } from "@/lib/roman";
 import Link from "next/link";
 import { FACTIONS, type FactionId } from "@/lib/factions";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
+import { SiteNav } from "@/components/SiteNav";
 import { useNow } from "@/lib/useNow";
 
 /** Only this span re-renders every second. */
@@ -36,18 +37,22 @@ export function TopBar({
   children?: React.ReactNode;
 }) {
   return (
-    <header className="relative z-30 flex shrink-0 flex-col border-b border-gold/40 bg-charcoal lg:h-[150px] lg:flex-row lg:items-start">
+    <header className="relative z-30 flex shrink-0 flex-col border-b border-gold/40 bg-charcoal lg:h-[196px] lg:flex-row lg:items-start">
       <div className="pointer-events-none absolute inset-x-0 bottom-[3px] h-px bg-gold/20" />
       <div className="flex h-12 min-w-0 items-center gap-3 px-3 max-md:pr-36 md:px-5 lg:h-14 lg:max-w-[calc(50%-300px)] 2xl:max-w-[calc(50%-480px)]">
         <Link href="/" className="shrink-0 font-display text-lg font-bold tracking-[0.12em] text-gold md:text-xl">
           $WERGILD
         </Link>
+        {/* the site menu, on the map too */}
+        <div className="relative z-40 shrink-0">
+          <SiteNav compact />
+        </div>
         <div className="hidden h-6 w-px shrink-0 bg-gold/30 sm:block" />
         <div className="min-w-0 leading-tight">
         <div className="truncate font-display text-[11px] tracking-[0.2em] text-parchment/90 md:text-xs">
           SEASON {roman(seasonNumber)} · {seasonName.toUpperCase()}
         </div>
-        <div className="font-mono text-[11px] text-parchment/60 md:text-xs" suppressHydrationWarning>
+        <div className="whitespace-nowrap font-mono text-[11px] text-parchment/60 md:text-xs" suppressHydrationWarning>
           <span className="hidden sm:inline">The Knell in </span>
           <Countdown endsAt={endsAt} />
         </div>
@@ -55,7 +60,7 @@ export function TopBar({
       </div>
       <ConnectButton className="absolute right-3 top-2 z-10 md:right-5 md:top-3" />
       {/* banner rail: its own row on mobile, centred in the header on desktop */}
-      <div className="relative h-[108px] md:h-[146px] lg:pointer-events-none lg:absolute lg:inset-x-0 lg:top-0 lg:h-full">{children}</div>
+      <div className="relative h-[132px] md:h-[192px] lg:pointer-events-none lg:absolute lg:inset-x-0 lg:top-0 lg:h-full">{children}</div>
     </header>
   );
 }
@@ -107,7 +112,7 @@ export function MiniBanners({
           <button
             key={f.id}
             onClick={() => onPick?.(f.id)}
-            className="pointer-events-auto group flex w-[68px] flex-col items-center md:w-[112px] 2xl:w-[186px]"
+            className="pointer-events-auto group flex w-[68px] flex-col items-center md:w-[128px] 2xl:w-[196px]"
             title={`#${i + 1} ${f.name} · ${pts} pts`}
             aria-label={`Rank ${i + 1}: ${f.name}, ${pts} points${mine ? " (your Banner)" : ""}`}
           >
@@ -118,7 +123,7 @@ export function MiniBanners({
                 src={f.banner}
                 alt=""
                 draggable={false}
-                className={`h-[60px] w-auto md:h-[90px] ${
+                className={`h-[80px] w-auto md:h-[134px] ${
                   mine
                     ? "drop-shadow-[0_0_6px_rgba(232,196,104,0.95)] [filter:drop-shadow(0_0_6px_rgba(232,196,104,0.95))_drop-shadow(0_0_14px_rgba(201,162,75,0.7))]"
                     : "drop-shadow-[0_4px_6px_rgba(0,0,0,0.6)]"
@@ -128,10 +133,10 @@ export function MiniBanners({
             <div
               className={`mt-0.5 text-center leading-tight ${mine ? "text-gold" : "text-parchment/85"}`}
             >
-              <span className="block font-display text-[8px] leading-[9px] tracking-[0.04em] md:inline md:whitespace-nowrap md:text-[10.5px] md:leading-tight md:tracking-[0.06em]">{f.name}</span>
+              <span className="block font-display text-[9px] leading-[10px] tracking-[0.04em] md:inline md:whitespace-nowrap md:text-[12px] md:leading-tight md:tracking-[0.06em]">{f.name}</span>
               {/* one line "The Goblins · 120 pts" when there is room, two lines otherwise */}
               <span className="hidden text-parchment/45 2xl:inline"> · </span>
-              <span className="block whitespace-nowrap font-mono text-[9px] text-parchment/70 md:text-[10.5px] 2xl:inline">
+              <span className="block whitespace-nowrap font-mono text-[10px] text-parchment/75 md:text-[12px] 2xl:inline">
                 {pts} pts
               </span>
             </div>

@@ -351,7 +351,7 @@ export default function MapClient() {
         </main>
 
         {/* desktop: right panel */}
-        <aside className="hidden w-[360px] shrink-0 overflow-y-auto border-l border-gold/30 bg-[#191613] p-5 md:block">{panel}</aside>
+        <aside className="hidden w-[360px] shrink-0 overflow-y-auto border-l border-gold/30 bg-[#191613] p-5 md:block lg:w-[440px] lg:p-7">{panel}</aside>
 
         {/* mobile: bottom drawer */}
         <div

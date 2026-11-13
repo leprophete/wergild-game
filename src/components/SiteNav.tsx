@@ -16,14 +16,14 @@ export const NAV = [
 const active = (path: string, href: string) => path === href || path.startsWith(`${href}/`);
 
 /** Inline links on large screens; a menu button below. The current page is marked. */
-export function SiteNav() {
+export function SiteNav({ compact = false }: { compact?: boolean }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
 
   return (
     <>
-      <nav aria-label="Site" className="hidden gap-5 whitespace-nowrap text-sm text-parchment/70 lg:flex">
+      <nav aria-label="Site" className={`hidden gap-5 whitespace-nowrap text-sm text-parchment/70 ${compact ? "" : "lg:flex"}`}>
         {NAV.map(([href, label]) => (
           <Link
             key={href}
@@ -35,7 +35,7 @@ export function SiteNav() {
           </Link>
         ))}
       </nav>
-      <div className="lg:hidden">
+      <div className={compact ? "" : "lg:hidden"}>
         <button
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
@@ -51,7 +51,11 @@ export function SiteNav() {
           <nav
             id="site-menu"
             aria-label="Site"
-            className="absolute inset-x-0 top-14 z-40 border-b border-gold/40 bg-[#191613] px-4 py-2 shadow-[0_10px_24px_rgba(0,0,0,0.6)]"
+            className={
+              compact
+                ? "absolute left-0 top-11 z-50 w-60 rounded-md border border-gold/40 bg-[#191613] px-4 py-2 shadow-[0_10px_24px_rgba(0,0,0,0.6)]"
+                : "absolute inset-x-0 top-14 z-40 border-b border-gold/40 bg-[#191613] px-4 py-2 shadow-[0_10px_24px_rgba(0,0,0,0.6)]"
+            }
           >
             {NAV.map(([href, label]) => (
               <Link
