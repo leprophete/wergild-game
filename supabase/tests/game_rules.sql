@@ -33,8 +33,8 @@ begin
   exception when others then log := log || format(E'\n 1 deploy far from my land ............ %s (expect not_adjacent)', sqlerrm); end;
   begin perform public.game_action(a, 'deploy', 24::smallint, 2::smallint, 100); log := log || E'\n 2 ALLOWED (bug)';
   exception when others then log := log || format(E'\n 2 deploy on the river ............... %s (expect river)', sqlerrm); end;
-  begin perform public.game_action(a, 'deploy', 4::smallint, 4::smallint, 100); log := log || E'\n 3 ALLOWED (bug)';
-  exception when others then log := log || format(E'\n 3 deploy on the Goblin camp ......... %s (expect impregnable)', sqlerrm); end;
+  begin perform public.game_action(a, 'deploy', 14::smallint, 6::smallint, 100); log := log || E'\n 3 ALLOWED (bug)';
+  exception when others then log := log || format(E'\n 3 deploy on the Goblin camp (14,6) .. %s (expect impregnable)', sqlerrm); end;
   begin perform public.game_action(n, 'deploy', near.x, near.y, 100); log := log || E'\n 4 ALLOWED (bug)';
   exception when others then log := log || format(E'\n 4 player without a Banner .......... %s (expect no_banner)', sqlerrm); end;
   begin perform public.game_action(a, 'deploy', near.x, near.y, 0); log := log || E'\n 5 ALLOWED (bug)';

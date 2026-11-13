@@ -41,12 +41,17 @@ export const moveSchema = z
 
 export const joinRequestSchema = z.object({ factionId: z.enum(FACTION_IDS as [string, ...string[]]) }).strict();
 
-/** Parses a JSON body with a schema; returns null on any malformed input. */
+const MAX_BODY = 4096;
+
+/** Parses a JSON body with a schema; returns null on any malformed input or a body over 4 kB. */
 export async function parseJson<T extends z.ZodType>(req: Request, schema: T): Promise<z.infer<T> | null> {
-  if (Number(req.headers.get("content-length") ?? 0) > 4096) return null;
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY) return null;
   let body: unknown;
   try {
-    body = await req.json();
+    // the declared length can be absent (chunked body): measure what actually arrived
+    const text = await req.text();
+    if (text.length > MAX_BODY) return null;
+    body = JSON.parse(text);
   } catch {
     return null;
   }

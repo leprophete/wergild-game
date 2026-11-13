@@ -12,8 +12,13 @@ begin
   update public.players set age_updated_at = now() - interval '15 days' where wallet = w;
   select * into r from public.apply_balance(w, 100000 * k, u); log := log || format(E'\n2 +15 days: force=%s age=%s (expect 150, 15)', r.force, r.age_days);
   select * into r from public.apply_balance(w, 200000 * k, u); log := log || format(E'\n3 buy +100k: soldiers=%s force=%s age=%s (expect 200, 250, 7.5)', r.soldiers, r.force, r.age_days);
-  select id into c1 from public.cells c join public.seasons s on s.id = c.season_id and s.status = 'active' where c.x = 16 and c.y = 14;
-  select id into c2 from public.cells c join public.seasons s on s.id = c.season_id and s.status = 'active' where c.x = 17 and c.y = 14;
+  -- two neighbouring land cells, outside any base camp (the map's mask decides where land is)
+  select c.id, n.id into c1, c2
+  from public.cells c
+  join public.seasons s on s.id = c.season_id and s.status = 'active'
+  join public.cells n on n.season_id = c.season_id and n.y = c.y and n.x = c.x + 1
+  where c.kind = 'normal' and n.kind = 'normal' and c.base_faction_id is null and n.base_faction_id is null
+  order by c.y, c.x limit 1;
   insert into public.deployments (wallet, cell_id, season_id, force)
     select w, c.id, c.season_id, v.f from public.cells c join (values (c1, 150), (c2, 100)) v(id, f) on v.id = c.id;
   perform public.recompute_cell(c1); perform public.recompute_cell(c2);

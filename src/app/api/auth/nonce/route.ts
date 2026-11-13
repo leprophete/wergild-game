@@ -3,9 +3,13 @@ import { NONCE_TTL_MINUTES } from "@config/game";
 import { getAdminSupabase } from "@/lib/supabase/admin";
 import { buildSignInMessage, newNonce, requestDomain } from "@/lib/auth/siws";
 import { nonceRequestSchema, parseJson } from "@/lib/validation";
+import { clientIp, rateLimit } from "@/lib/http/rateLimit";
 
 /** POST /api/auth/nonce { wallet } → the message to sign (single-use nonce, 5 minutes). */
 export async function POST(req: Request) {
+  // a nonce is a row in the database: no flood from one address
+  const limited = await rateLimit(`nonce:${clientIp(req)}`, 20, 60);
+  if (limited) return limited;
   const body = await parseJson(req, nonceRequestSchema);
   if (!body) return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   const domain = requestDomain(req);

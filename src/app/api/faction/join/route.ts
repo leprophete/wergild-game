@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { FACTION_CAP_PCT, FACTION_SWITCHES_PER_SEASON } from "@config/game";
+import { ACTIONS_PER_MINUTE, FACTION_CAP_PCT, FACTION_SWITCHES_PER_SEASON } from "@config/game";
+import { rateLimit } from "@/lib/http/rateLimit";
 import { getAdminSupabase } from "@/lib/supabase/admin";
 import { getSessionWallet } from "@/lib/auth/session";
 import { joinRequestSchema, parseJson } from "@/lib/validation";
@@ -16,6 +17,8 @@ const RULE_ERRORS: Record<string, { status: number; message: string }> = {
 export async function POST(req: Request) {
   const wallet = await getSessionWallet();
   if (!wallet) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+  const limited = await rateLimit(`act:${wallet}`, ACTIONS_PER_MINUTE, 60);
+  if (limited) return limited;
   const body = await parseJson(req, joinRequestSchema);
   if (!body) return NextResponse.json({ error: "invalid_request" }, { status: 400 });
 

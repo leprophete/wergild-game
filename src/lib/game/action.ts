@@ -1,9 +1,10 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { COOLDOWN_MINUTES, GRID_W, MAX_FORCE_PER_CELL } from "@config/game";
+import { ACTIONS_PER_MINUTE, COOLDOWN_MINUTES, GRID_W, MAX_FORCE_PER_CELL } from "@config/game";
 import { getAdminSupabase } from "@/lib/supabase/admin";
 import { getSessionWallet } from "@/lib/auth/session";
 import { syncWallet } from "@/lib/chain/sync";
+import { rateLimit } from "@/lib/http/rateLimit";
 
 /** Rule refusals raised by game_action(), with the message shown to the player. */
 const REFUSALS: Record<string, string> = {
@@ -19,6 +20,7 @@ const REFUSALS: Record<string, string> = {
   no_active_season: "No season is running.",
   invalid_destination: "Choose another destination.",
   unknown_cell: "Unknown cell.",
+  unknown_player: "Sign in again.",
   invalid_amount: "Invalid amount.",
 };
 
@@ -31,6 +33,11 @@ export type ActionKind = "deploy" | "withdraw" | "move";
 export async function runAction(kind: ActionKind, from: number, amount: number, to?: number) {
   const wallet = await getSessionWallet();
   if (!wallet) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
+
+  // SPEC anti-cheat: at most ACTIONS_PER_MINUTE orders per minute and per wallet (before any
+  // chain read, so spamming cannot burn the RPC quota either)
+  const limited = await rateLimit(`act:${wallet}`, ACTIONS_PER_MINUTE, 60);
+  if (limited) return limited;
 
   // Anti double-count: re-read the on-chain balance before placing soldiers (rule 6 applied first).
   if (kind !== "withdraw") {
@@ -61,7 +68,8 @@ export async function runAction(kind: ActionKind, from: number, amount: number, 
   });
   if (error) {
     const message = REFUSALS[error.message];
-    if (message) return NextResponse.json({ error: error.message, message }, { status: 409 });
+    if (message)
+      return NextResponse.json({ error: error.message, message }, { status: error.message === "unknown_player" ? 401 : 409 });
     console.error(`${kind} failed`, error);
     return NextResponse.json({ error: "server_error", message: "Something went wrong. Try again." }, { status: 500 });
   }

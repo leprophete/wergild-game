@@ -3,10 +3,13 @@ import { EXCLUDED_WALLETS } from "@config/game";
 import { getAdminSupabase } from "@/lib/supabase/admin";
 import { buildSignInMessage, requestDomain, verifySolanaSignature } from "@/lib/auth/siws";
 import { createSession } from "@/lib/auth/session";
+import { clientIp, rateLimit } from "@/lib/http/rateLimit";
 import { parseJson, verifyRequestSchema } from "@/lib/validation";
 
 /** POST /api/auth/verify { wallet, nonce, signature } → opens a session (httpOnly cookie). */
 export async function POST(req: Request) {
+  const limited = await rateLimit(`verify:${clientIp(req)}`, 20, 60);
+  if (limited) return limited;
   const body = await parseJson(req, verifyRequestSchema);
   if (!body) return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   const domain = requestDomain(req);
