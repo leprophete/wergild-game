@@ -50,6 +50,8 @@ export const ADMIN_REFUSALS: Record<string, string> = {
   one_rush_per_week: "There is already a Rush that week.",
   event_started_or_unknown: "That event has begun (or does not exist).",
   invalid_wallet: "Not a wallet address.",
+  message_not_found: "That message is already gone.",
+  invalid_duration: "Choose a duration between a minute and 90 days.",
 };
 
 export function adminError(e: { message?: string } | null) {

@@ -7,7 +7,12 @@ import { getAdminSupabase } from "@/lib/supabase/admin";
  * server instance. Returns a 429 response to send back as is, or null when the request may go on.
  * If the database cannot answer, the request goes on (the game must not stop for a counter).
  */
-export async function rateLimit(key: string, limit: number, windowSeconds: number): Promise<NextResponse | null> {
+export async function rateLimit(
+  key: string,
+  limit: number,
+  windowSeconds: number,
+  message = "Too many orders at once. Wait a moment.",
+): Promise<NextResponse | null> {
   const { data, error } = await getAdminSupabase().rpc("hit_rate_limit", {
     p_key: key.slice(0, 120),
     p_limit: limit,
@@ -19,7 +24,7 @@ export async function rateLimit(key: string, limit: number, windowSeconds: numbe
   }
   if (data === true) return null;
   return NextResponse.json(
-    { error: "rate_limited", message: "Too many orders at once. Wait a moment." },
+    { error: "rate_limited", message },
     { status: 429, headers: { "Retry-After": String(windowSeconds) } },
   );
 }

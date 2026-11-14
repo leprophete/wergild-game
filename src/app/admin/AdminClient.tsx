@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { EVENT_NOTICE_HOURS, GRID_H, GRID_W, PLAGUE_SIZE, TITHE_SIZE } from "@config/game";
 import { FACTION_BY_ID } from "@/lib/factions";
 import type { AdminState } from "@/lib/game/admin";
+import type { ReportedMessage } from "@/lib/chat";
 import { roman } from "@/lib/roman";
 import { useSession } from "@/components/wallet/SessionProvider";
 import { useWalletModal } from "@/components/wallet/WalletModal";
@@ -109,6 +110,10 @@ export default function AdminClient() {
 
       <Section title="EVENTS">
         <Events state={state} busy={busy} act={act} />
+      </Section>
+
+      <Section title="WAR COUNCIL — REPORTED MESSAGES">
+        <ChatModeration busy={busy} act={act} />
       </Section>
 
       <div className="grid gap-5 md:grid-cols-2">
@@ -454,6 +459,98 @@ function Excluded({ state, busy, act }: { state: AdminState; busy: boolean; act:
               <button className={ghost} disabled={busy} onClick={() => void act("/api/admin/excluded", { wallet: p.wallet, excluded: false }, "Wallet readmitted.")}>
                 Readmit
               </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const MUTE_CHOICES = [
+  { label: "1 hour", minutes: 60 },
+  { label: "24 hours", minutes: 60 * 24 },
+  { label: "7 days", minutes: 60 * 24 * 7 },
+  { label: "30 days", minutes: 60 * 24 * 30 },
+];
+
+/** Reported War Council messages: delete one, clear its reports, or silence its author for a while. */
+function ChatModeration({ busy, act }: { busy: boolean; act: Act }) {
+  const [list, setList] = useState<ReportedMessage[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [minutes, setMinutes] = useState(MUTE_CHOICES[1].minutes);
+
+  const load = useCallback(async () => {
+    const r = await fetch("/api/admin/chat", { cache: "no-store" });
+    if (!r.ok) return setFailed(true);
+    setFailed(false);
+    setList((await r.json()).reported);
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const run = async (body: object, done: string) => {
+    await act("/api/admin/chat", body, done);
+    await load();
+  };
+
+  if (failed) return <p className="text-sm text-[#e7b4a8]">Could not load the reported messages.</p>;
+  if (!list) return <p className="text-sm text-parchment/50">Loading…</p>;
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-parchment/60">
+        Silence for
+        <select className={input} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
+          {MUTE_CHOICES.map((c) => (
+            <option key={c.minutes} value={c.minutes}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <button className={ghost} disabled={busy} onClick={() => void load()}>
+          Refresh
+        </button>
+      </div>
+      {list.length === 0 ? (
+        <p className="mt-3 text-sm text-parchment/50">No reported message. The councils are quiet.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-white/5">
+          {list.map((m) => (
+            <li key={m.id} className="py-2.5">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-parchment/55">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={FACTION_BY_ID[m.faction as keyof typeof FACTION_BY_ID]?.crest} alt="" className="h-5 w-auto" />
+                <span className="font-mono text-parchment/85" title={m.wallet}>
+                  {m.wallet}
+                </span>
+                <span>{utc(m.at)}</span>
+                <span className="rounded bg-[#3a1c1c] px-1.5 text-[#e7b4a8]">
+                  {m.reports} report{m.reports === 1 ? "" : "s"}
+                </span>
+                {m.mutedUntil && <span className="text-gold">silenced until {utc(m.mutedUntil)}</span>}
+              </div>
+              <p className="mt-1 whitespace-pre-wrap break-words font-fell text-[15px] text-parchment/90">{m.body}</p>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                <button className={ghost} disabled={busy} onClick={() => void run({ action: "delete", id: m.id }, "Message deleted.")}>
+                  Delete message
+                </button>
+                <button
+                  className={ghost}
+                  disabled={busy}
+                  onClick={() => void run({ action: "mute", wallet: m.wallet, minutes }, `${short(m.wallet)} silenced.`)}
+                >
+                  Silence {MUTE_CHOICES.find((c) => c.minutes === minutes)?.label}
+                </button>
+                {m.mutedUntil && (
+                  <button className={ghost} disabled={busy} onClick={() => void run({ action: "mute", wallet: m.wallet, minutes: 0 }, "Silence lifted.")}>
+                    Lift silence
+                  </button>
+                )}
+                <button className={ghost} disabled={busy} onClick={() => void run({ action: "dismiss", id: m.id }, "Reports cleared.")}>
+                  Keep (clear reports)
+                </button>
+              </div>
             </li>
           ))}
         </ul>

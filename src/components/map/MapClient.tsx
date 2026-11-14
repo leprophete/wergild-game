@@ -20,6 +20,7 @@ import { CaptureDialog } from "./CaptureDialog";
 import { GuideCard, canDeployOn, deployTargets, useFirstDeployGuide } from "./Guide";
 import { play } from "@/lib/sound";
 import { MiniBanners, TopBar } from "./TopBar";
+import { WarCouncil } from "./WarCouncil";
 import { CellPanel, ChooseBannerCard, HomelandCard, MyArmy, SpectatorCard, TheWar } from "./SidePanel";
 import { useSession } from "@/components/wallet/SessionProvider";
 import { ActivityFeed } from "./ActivityFeed";
@@ -287,6 +288,8 @@ export default function MapClient() {
         <SpectatorCard />
       )}
       {cellPanel ?? (me ? <HomelandCard factionId={me.faction} /> : null)}
+      {/* the Banner's private chat: signed-in, sworn players of the live war only */}
+      {live && me && <WarCouncil faction={me.faction} />}
       <TheWar scores={world.scores} lastHour={world.lastHour} myFaction={me?.faction ?? null} />
       <p className="mt-6 text-[11px] text-parchment/35">{footnote}</p>
     </>

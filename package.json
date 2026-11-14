@@ -9,7 +9,8 @@
     "lint": "eslint",
     "seed:gen": "tsx scripts/gen-seed.ts",
     "devnet": "tsx scripts/devnet-token.ts",
-    "test": "tsx tests/zones.test.ts && tsx tests/banner.test.ts",
+    "test": "tsx tests/zones.test.ts && tsx tests/banner.test.ts && tsx tests/chat.test.ts",
+    "test:chat-api": "node tests/chat-api.mjs",
     "map:images": "node scripts/gen-map-images.mjs"
   },
   "dependencies": {
